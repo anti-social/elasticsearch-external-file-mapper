@@ -35,9 +35,17 @@ commands:
     container: kotlin-sdk
     run: mkdir -p $GRADLE_USER_HOME/caches
 
+  build: !Command
+    <<: *cmd-opts
+    run: [gradle, build]
+
   compile: !Command
     <<: *cmd-opts
     run: [gradle, compileKotlin]
+
+  clean: !Command
+    <<: *cmd-opts
+    run: [gradle, clean]
 
   gradle: !Command
     <<: *cmd-opts
