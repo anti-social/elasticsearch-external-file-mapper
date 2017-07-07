@@ -1,0 +1,52 @@
+_default:
+  gradle-home: &gradle-home /work/.gradle
+  cmd-opts: &cmd-opts
+    container: kotlin-sdk
+    prerequisites: [_mk-gradle-user-home]
+    volumes:
+      /work/.gradle/caches: !CacheDir gradle-cache
+
+containers:
+  kotlin-sdk:
+    environ:
+      JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
+      GRADLE_USER_HOME: *gradle-home
+    setup:
+    - !Ubuntu xenial
+    - !Install
+      - openjdk-8-jdk-headless
+    - !EnsureDir /opt/gradle
+    - !Unzip
+      url: https://services.gradle.org/distributions/gradle-4.0-bin.zip
+      sha256: 56bd2dde29ba2a93903c557da1745cafd72cdd8b6b0b83c05a40ed7896b79dfe
+      subdir: gradle-4.0
+      path: /opt/gradle
+    - !Sh ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle
+    - !EnsureDir /opt/kotlinc
+    - !Unzip
+      url: https://github.com/JetBrains/kotlin/releases/download/v1.1.3-2/kotlin-compiler-1.1.3-2.zip
+      sha256: 42abf39538e0ea5960b98e314191b40570090789431e2eac17dd54ebd8b74406
+      subdir: kotlinc
+      path: /opt/kotlinc
+    - !Sh ln -s /opt/kotlinc/bin/kotlinc /usr/local/bin/kotlinc
+
+commands:
+  _mk-gradle-user-home: !Command
+    container: kotlin-sdk
+    run: mkdir -p $GRADLE_USER_HOME/caches
+
+  compile: !Command
+    <<: *cmd-opts
+    run: [gradle, compileKotlin]
+
+  gradle: !Command
+    <<: *cmd-opts
+    run: [gradle]
+
+  kotlinc: !Command
+    <<: *cmd-opts
+    run: [kotlinc]
+
+  java: !Command
+    <<: *cmd-opts
+    run: [java]
