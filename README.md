@@ -1,0 +1,1 @@
+# elasticsearch-external-field-mapper
