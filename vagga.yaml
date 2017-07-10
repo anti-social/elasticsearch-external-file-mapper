@@ -2,6 +2,8 @@ _default:
   gradle-home: &gradle-home /work/.gradle
   cmd-opts: &cmd-opts
     container: kotlin-sdk
+    user-id: 1
+    external-user-id: 0
     prerequisites: [_mk-gradle-user-home]
     volumes:
       /work/.gradle/caches: !CacheDir gradle-cache
@@ -35,26 +37,58 @@ commands:
     container: kotlin-sdk
     run: mkdir -p $GRADLE_USER_HOME/caches
 
+  daemon: !Command
+    <<: *cmd-opts
+    description: Run gradle daemon
+    run: |
+      # --foreground option runs daemon with different jvm options
+      # so then another gradle process rejects to connect to the daemon
+      LOG_DIR=$GRADLE_USER_HOME/daemon/4.0
+      rm -rf $LOG_DIR/daemon-*.out.log
+      gradle --dry-run --daemon build
+      tail -f $LOG_DIR/daemon-*.out.log
+
+  assemble: !Command
+    <<: *cmd-opts
+    description: Assembles the outputs of this project
+    run: [gradle, assemble]
+
   build: !Command
     <<: *cmd-opts
+    description: Assembles and tests this project
     run: [gradle, build]
 
   compile: !Command
     <<: *cmd-opts
+    description: Compiles main source files
     run: [gradle, compileKotlin]
+
+  compile-test: !Command
+    <<: *cmd-opts
+    description: Compiles test source files
+    run: [gradle, compileTestKotlin]
 
   clean: !Command
     <<: *cmd-opts
+    description: Deletes the build directory
     run: [gradle, clean]
+
+  clean-build: !Command
+    <<: *cmd-opts
+    description: Deletes the build directory and then assembles and tests the project
+    run: [gradle, clean, build]
 
   gradle: !Command
     <<: *cmd-opts
+    description: Runs arbitrary gradle task
     run: [gradle]
 
   kotlinc: !Command
     <<: *cmd-opts
+    description: Runs kotlin compiler
     run: [kotlinc]
 
   java: !Command
     <<: *cmd-opts
+    description: Runs java virtual machine
     run: [java]

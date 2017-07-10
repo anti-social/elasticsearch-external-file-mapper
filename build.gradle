@@ -18,7 +18,7 @@ apply plugin: 'elasticsearch.esplugin'
 esplugin {
     name = 'external-field-mapper'
     description 'External field mapper for ElasticSearch'
-    classname = 'company.evo.elasticsearch.mapper.plugin.ExternalMapperPlugin'
+    classname = 'company.evo.elasticsearch.plugin.mapper.ExternalMapperPlugin'
 }
 
 version '0.0.1-SNAPSHOT'
@@ -28,5 +28,5 @@ repositories {
 }
 
 dependencies {
-    compile "org.jetbrains.kotlin:kotlin-runtime:1.1.3-2"
+    compile "org.jetbrains.kotlin:kotlin-runtime"
 }
