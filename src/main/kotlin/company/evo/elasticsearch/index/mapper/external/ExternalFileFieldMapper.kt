@@ -20,12 +20,17 @@ import org.apache.lucene.index.IndexableField
 import org.apache.lucene.index.IndexOptions
 import org.apache.lucene.search.Query
 import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.index.IndexSettings
+import org.elasticsearch.index.fielddata.IndexFieldData
+import org.elasticsearch.index.fielddata.IndexFieldDataCache
 import org.elasticsearch.index.mapper.FieldMapper
 import org.elasticsearch.index.mapper.MappedFieldType
 import org.elasticsearch.index.mapper.Mapper
+import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.index.mapper.ParseContext
 import org.elasticsearch.index.query.QueryShardContext
 import org.elasticsearch.index.query.QueryShardException
+import org.elasticsearch.indices.breaker.CircuitBreakerService
 
 
 public class ExternalFileFieldMapper(
@@ -40,8 +45,12 @@ public class ExternalFileFieldMapper(
         indexSettings, multiFields, copyTo) {
 
     companion object {
-        const val CONTENT_TYPE: String = "external_file"
-        val FIELD_TYPE: ExternalFileFieldType = ExternalFileFieldType()
+        const val CONTENT_TYPE = "external_file"
+        val FIELD_TYPE = ExternalFileFieldType()
+
+        init {
+            FIELD_TYPE.freeze()
+        }
     }
 
     override protected fun contentType() : String {
@@ -67,6 +76,18 @@ public class ExternalFileFieldMapper(
 
         override public fun termQuery(value: Any, context: QueryShardContext): Query {
             throw QueryShardException(context, "ExternalFile fields are not searcheable")
+        }
+
+        override public fun fielddataBuilder(): IndexFieldData.Builder {
+            return object : IndexFieldData.Builder {
+                override public fun build(
+                        indexSettings: IndexSettings, fieldType: MappedFieldType,
+                        cache: IndexFieldDataCache, breakerService: CircuitBreakerService,
+                        mapperService: MapperService
+                ): IndexFieldData<*> {
+                    throw IllegalArgumentException("TODO: Implement fielddata")
+                }
+            }
         }
     }
 
