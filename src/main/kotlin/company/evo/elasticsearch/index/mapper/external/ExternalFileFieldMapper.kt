@@ -18,11 +18,17 @@ package company.evo.elasticsearch.index.mapper.external
 
 import org.apache.lucene.index.IndexableField
 import org.apache.lucene.index.IndexOptions
+import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.search.Query
+import org.apache.lucene.search.SortField
 import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.index.Index
 import org.elasticsearch.index.IndexSettings
+import org.elasticsearch.index.fielddata.AtomicFieldData
 import org.elasticsearch.index.fielddata.IndexFieldData
 import org.elasticsearch.index.fielddata.IndexFieldDataCache
+import org.elasticsearch.index.fielddata.ScriptDocValues
+import org.elasticsearch.index.fielddata.SortedBinaryDocValues
 import org.elasticsearch.index.mapper.FieldMapper
 import org.elasticsearch.index.mapper.MappedFieldType
 import org.elasticsearch.index.mapper.Mapper
@@ -31,6 +37,7 @@ import org.elasticsearch.index.mapper.ParseContext
 import org.elasticsearch.index.query.QueryShardContext
 import org.elasticsearch.index.query.QueryShardException
 import org.elasticsearch.indices.breaker.CircuitBreakerService
+import org.elasticsearch.search.MultiValueMode
 
 
 public class ExternalFileFieldMapper(
@@ -85,10 +92,54 @@ public class ExternalFileFieldMapper(
                         cache: IndexFieldDataCache, breakerService: CircuitBreakerService,
                         mapperService: MapperService
                 ): IndexFieldData<*> {
-                    throw IllegalArgumentException("TODO: Implement fielddata")
+                    return ExternalFileFieldData(name())
                 }
             }
         }
+    }
+
+    class ExternalFileFieldData(private val fieldName: String) : IndexFieldData<ExternalFileFieldData.Atomic> {
+
+        class Atomic : AtomicFieldData {
+            override public fun getScriptValues(): ScriptDocValues<Float> {
+                throw UnsupportedOperationException("Not implemented")
+            }
+
+            override public fun getBytesValues(): SortedBinaryDocValues {
+                throw UnsupportedOperationException("Not implemented")
+            }
+
+            override public fun ramBytesUsed(): Long {
+                return 0
+            }
+
+            override public fun close() {}
+        }
+
+        override public fun index(): Index {
+            throw UnsupportedOperationException("Not Implemented")
+        }
+
+        override public fun getFieldName(): String {
+            return fieldName
+        }
+
+        override public fun load(context: LeafReaderContext): Atomic {
+            throw UnsupportedOperationException("Not implemented")
+        }
+
+        override public fun loadDirect(context: LeafReaderContext): Atomic {
+            throw UnsupportedOperationException("Not implemented")
+        }
+
+        override public fun sortField(
+                missingValue: Any?, sortMode: MultiValueMode,
+                nested: IndexFieldData.XFieldComparatorSource.Nested, reverse: Boolean): SortField
+        {
+            throw UnsupportedOperationException("Not implemented")
+        }
+
+        override public fun clear() {}
     }
 
     class TypeParser : Mapper.TypeParser {
