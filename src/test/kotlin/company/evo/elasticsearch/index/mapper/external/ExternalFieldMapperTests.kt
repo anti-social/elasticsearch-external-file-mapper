@@ -16,9 +16,29 @@
 
 package company.evo.elasticsearch.index.mapper.external
 
-import org.elasticsearch.test.ESTestCase
+import org.elasticsearch.index.IndexService
+import org.elasticsearch.index.mapper.Mapper.TypeParser
+import org.elasticsearch.indices.mapper.MapperRegistry
+import org.elasticsearch.test.ESSingleNodeTestCase
+import org.junit.Before
 
-public class ExternalFieldMapperTests : ESTestCase() {
+import java.util.Collections
+
+
+public class ExternalFieldMapperTests : ESSingleNodeTestCase() {
+
+    lateinit var indexService: IndexService
+    lateinit var mapperRegistry: MapperRegistry
+
+    @Before fun setup() {
+        indexService = this.createIndex("test")
+        mapperRegistry = MapperRegistry(
+            Collections.singletonMap(
+                ExternalFileFieldMapper.CONTENT_TYPE,
+                ExternalFileFieldMapper.TypeParser() as TypeParser),
+            Collections.emptyMap())
+    }
+
     public fun test() {
     }
 }
