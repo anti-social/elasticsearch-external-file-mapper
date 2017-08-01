@@ -43,7 +43,7 @@ import org.elasticsearch.indices.breaker.CircuitBreakerService
 import org.elasticsearch.search.MultiValueMode
 
 
-public class ExternalFileFieldMapper(
+class ExternalFileFieldMapper(
         simpleName: String,
         fieldType: MappedFieldType,
         defaultFieldType: MappedFieldType,
@@ -64,11 +64,11 @@ public class ExternalFileFieldMapper(
         }
     }
 
-    override protected fun contentType() : String {
+    override fun contentType() : String {
         return CONTENT_TYPE
     }
 
-    override protected fun parseCreateField(
+    override fun parseCreateField(
             context: ParseContext, fields: List<IndexableField>)
     {
     }
@@ -77,21 +77,21 @@ public class ExternalFileFieldMapper(
         constructor()
         constructor(ref: ExternalFileFieldType) : super(ref)
 
-        override public fun typeName(): String {
+        override fun typeName(): String {
             return CONTENT_TYPE
         }
 
-        override public fun clone(): ExternalFileFieldType {
+        override fun clone(): ExternalFileFieldType {
             return ExternalFileFieldType(this)
         }
 
-        override public fun termQuery(value: Any, context: QueryShardContext): Query {
+        override fun termQuery(value: Any, context: QueryShardContext): Query {
             throw QueryShardException(context, "ExternalFile fields are not searcheable")
         }
 
-        override public fun fielddataBuilder(): IndexFieldData.Builder {
+        override fun fielddataBuilder(): IndexFieldData.Builder {
             return object : IndexFieldData.Builder {
-                override public fun build(
+                override fun build(
                         indexSettings: IndexSettings, fieldType: MappedFieldType,
                         cache: IndexFieldDataCache, breakerService: CircuitBreakerService,
                         mapperService: MapperService
@@ -113,74 +113,74 @@ public class ExternalFileFieldMapper(
         }
 
         class ExternalFileValues : SortedNumericDoubleValues() {
-            override public fun setDocument(doc: Int) {
+            override fun setDocument(doc: Int) {
             }
 
-            override public fun valueAt(doc: Int): Double {
+            override fun valueAt(doc: Int): Double {
                 return 1.2
             }
 
-            override public fun count(): Int {
+            override fun count(): Int {
                 return 1
             }
         }
 
         class Atomic : AtomicNumericFieldData {
-            override public fun getDoubleValues(): SortedNumericDoubleValues {
+            override fun getDoubleValues(): SortedNumericDoubleValues {
                 return ExternalFileValues()
             }
 
-            override public fun getLongValues(): SortedNumericDocValues {
+            override fun getLongValues(): SortedNumericDocValues {
                 throw UnsupportedOperationException("getLongValues: not implemented")
             }
 
-            override public fun getScriptValues(): ScriptDocValues.Doubles {
+            override fun getScriptValues(): ScriptDocValues.Doubles {
                 return ScriptDocValues.Doubles(ExternalFileValues())
             }
 
-            override public fun getBytesValues(): SortedBinaryDocValues {
+            override fun getBytesValues(): SortedBinaryDocValues {
                 throw UnsupportedOperationException("getBytesValues: not implemented")
             }
 
-            override public fun ramBytesUsed(): Long {
+            override fun ramBytesUsed(): Long {
                 return 0
             }
 
-            override public fun close() {}
+            override fun close() {}
         }
 
         override fun getNumericType(): IndexNumericFieldData.NumericType {
             return IndexNumericFieldData.NumericType.DOUBLE
         }
 
-        override public fun index(): Index {
+        override fun index(): Index {
             return index
         }
 
-        override public fun getFieldName(): String {
+        override fun getFieldName(): String {
             return fieldName
         }
 
-        override public fun load(context: LeafReaderContext): Atomic {
+        override fun load(context: LeafReaderContext): Atomic {
             return Atomic()
         }
 
-        override public fun loadDirect(context: LeafReaderContext): Atomic {
+        override fun loadDirect(context: LeafReaderContext): Atomic {
             return load(context)
         }
 
-        override public fun sortField(
+        override fun sortField(
                 missingValue: Any?, sortMode: MultiValueMode,
                 nested: IndexFieldData.XFieldComparatorSource.Nested, reverse: Boolean): SortField
         {
             throw UnsupportedOperationException("sortField: not implemented")
         }
 
-        override public fun clear() {}
+        override fun clear() {}
     }
 
     class TypeParser : Mapper.TypeParser {
-        override public fun parse(
+        override fun parse(
                 name: String,
                 node: Map<String, Any>,
                 parserContext: Mapper.TypeParser.ParserContext): Mapper.Builder<*,*>
@@ -194,14 +194,14 @@ public class ExternalFileFieldMapper(
             this.builder = this
         }
 
-        override public fun build(context: BuilderContext): ExternalFileFieldMapper {
+        override fun build(context: BuilderContext): ExternalFileFieldMapper {
             setupFieldType(context)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
                     multiFieldsBuilder.build(this, context), copyTo)
         }
 
-        override protected fun setupFieldType(context: BuilderContext) {
+        override fun setupFieldType(context: BuilderContext) {
             super.setupFieldType(context)
             fieldType.setIndexOptions(IndexOptions.NONE)
             defaultFieldType.setIndexOptions(IndexOptions.NONE)

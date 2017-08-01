@@ -35,7 +35,7 @@ import org.hamcrest.Matchers.containsString
 import org.junit.Before
 
 
-public class ExternalFieldMapperTests : ESSingleNodeTestCase() {
+class ExternalFieldMapperTests : ESSingleNodeTestCase() {
 
     lateinit var indexService: IndexService
     lateinit var mapperRegistry: MapperRegistry
@@ -55,11 +55,11 @@ public class ExternalFieldMapperTests : ESSingleNodeTestCase() {
             { indexService.newQueryShardContext(0, null, { throw UnsupportedOperationException() }) })
     }
 
-    override protected fun getPlugins(): Collection<Class<out Plugin>> {
+    override fun getPlugins(): Collection<Class<out Plugin>> {
         return pluginList(InternalSettingsPlugin::class.java)
     }
 
-    public fun testDefaults() {
+    fun testDefaults() {
         val mapping = XContentFactory.jsonBuilder()
                 .startObject().startObject("type")
                     .startObject("properties").startObject("ext_field")
@@ -74,7 +74,7 @@ public class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         assertEquals(Arrays.toString(fields), 0, fields.size)
     }
 
-    public fun testDocValuesNotAllowed() {
+    fun testDocValuesNotAllowed() {
         val mapping = XContentFactory.jsonBuilder()
                 .startObject().startObject("type")
                     .startObject("properties").startObject("ext_field")
@@ -91,7 +91,7 @@ public class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         }
     }
 
-    public fun testStoredNotAllowed() {
+    fun testStoredNotAllowed() {
         val mapping = XContentFactory.jsonBuilder()
                 .startObject().startObject("type")
                     .startObject("properties").startObject("ext_field")
