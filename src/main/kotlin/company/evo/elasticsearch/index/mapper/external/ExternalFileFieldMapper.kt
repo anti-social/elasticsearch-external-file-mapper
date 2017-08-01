@@ -34,6 +34,7 @@ import org.elasticsearch.index.fielddata.ScriptDocValues
 import org.elasticsearch.index.fielddata.SortedBinaryDocValues
 import org.elasticsearch.index.fielddata.SortedNumericDoubleValues
 import org.elasticsearch.index.mapper.FieldMapper
+import org.elasticsearch.index.mapper.IdFieldMapper
 import org.elasticsearch.index.mapper.MappedFieldType
 import org.elasticsearch.index.mapper.Mapper
 import org.elasticsearch.index.mapper.MapperService
@@ -44,6 +45,8 @@ import org.elasticsearch.index.query.QueryShardContext
 import org.elasticsearch.index.query.QueryShardException
 import org.elasticsearch.indices.breaker.CircuitBreakerService
 import org.elasticsearch.search.MultiValueMode
+
+import org.elasticsearch.index.mapper.TypeParsers.parseField
 
 
 class ExternalFileFieldMapper(
@@ -71,14 +74,17 @@ class ExternalFileFieldMapper(
         return CONTENT_TYPE
     }
 
-    override fun parseCreateField(
-            context: ParseContext, fields: List<IndexableField>)
-    {
-    }
+    override fun parseCreateField(context: ParseContext, fields: List<IndexableField>) {}
 
     class ExternalFileFieldType : MappedFieldType {
+        private var keyFieldName: String? = null
+
         constructor()
         constructor(ref: ExternalFileFieldType) : super(ref)
+
+        fun setKeyFieldName(keyFieldName: String) {
+            this.keyFieldName = keyFieldName
+        }
 
         override fun typeName(): String {
             return CONTENT_TYPE
@@ -99,10 +105,16 @@ class ExternalFileFieldMapper(
                         cache: IndexFieldDataCache, breakerService: CircuitBreakerService,
                         mapperService: MapperService
                 ): IndexNumericFieldData {
-                    val uidFieldType = mapperService.fullName(UidFieldMapper.NAME)
-                    val uidFieldData = uidFieldType.fielddataBuilder().build(
-                            indexSettings, uidFieldType, cache, breakerService, mapperService)
-                    return ExternalFileFieldData(name(), indexSettings.getIndex(), uidFieldData)
+                    val keyFieldType = if (keyFieldName != null) {
+                        mapperService.fullName(keyFieldName)
+                    } else if (indexSettings.isSingleType()) {
+                        mapperService.fullName(IdFieldMapper.NAME)
+                    } else {
+                        mapperService.fullName(UidFieldMapper.NAME)
+                    }
+                    val keyFieldData = keyFieldType.fielddataBuilder().build(
+                            indexSettings, keyFieldType, cache, breakerService, mapperService)
+                    return ExternalFileFieldData(name(), indexSettings.getIndex(), keyFieldData)
                 }
             }
         }
@@ -112,12 +124,12 @@ class ExternalFileFieldMapper(
 
         private val fieldName: String
         private val index: Index
-        private val uidFieldData: IndexFieldData<*>
+        private val keyFieldData: IndexFieldData<*>
 
-        constructor(fieldName: String, index: Index, uidFieldData: IndexFieldData<*>) {
+        constructor(fieldName: String, index: Index, keyFieldData: IndexFieldData<*>) {
             this.fieldName = fieldName
             this.index = index
-            this.uidFieldData = uidFieldData
+            this.keyFieldData = keyFieldData
         }
 
         class ExternalFileValues : SortedNumericDoubleValues {
@@ -137,14 +149,14 @@ class ExternalFileFieldMapper(
             }
 
             override fun valueAt(index: Int): Double {
-                return values.getOrDefault(getUid(doc).id(), 0.0)
+                return values.getOrDefault(getUid().id(), 0.0)
             }
 
             override fun count(): Int {
-                return if (values.containsKey(getUid(doc).id())) 1 else 0
+                return if (values.containsKey(getUid().id())) 1 else 0
             }
 
-            private fun getUid(doc: Int): Uid {
+            private fun getUid(): Uid {
                 return Uid.createUid(uids.valueAt(0).utf8ToString())
             }
         }
@@ -152,15 +164,15 @@ class ExternalFileFieldMapper(
         class Atomic : AtomicNumericFieldData {
 
             private val values: Map<String, Double>
-            private val uidFieldData: AtomicFieldData
+            private val keyFieldData: AtomicFieldData
 
-            constructor(values: Map<String, Double>, uidFieldData: AtomicFieldData) {
+            constructor(values: Map<String, Double>, keyFieldData: AtomicFieldData) {
                 this.values = values
-                this.uidFieldData = uidFieldData
+                this.keyFieldData = keyFieldData
             }
 
             override fun getDoubleValues(): SortedNumericDoubleValues {
-                return ExternalFileValues(values, uidFieldData.getBytesValues())
+                return ExternalFileValues(values, keyFieldData.getBytesValues())
             }
 
             override fun getLongValues(): SortedNumericDocValues {
@@ -168,7 +180,7 @@ class ExternalFileFieldMapper(
             }
 
             override fun getScriptValues(): ScriptDocValues.Doubles {
-                return ScriptDocValues.Doubles(ExternalFileValues(values, uidFieldData.getBytesValues()))
+                return ScriptDocValues.Doubles(ExternalFileValues(values, keyFieldData.getBytesValues()))
             }
 
             override fun getBytesValues(): SortedBinaryDocValues {
@@ -196,7 +208,14 @@ class ExternalFileFieldMapper(
 
         override fun load(ctx: LeafReaderContext): Atomic {
             val values = hashMapOf("1" to 1.1, "2" to 1.2, "3" to 1.3)
-            return Atomic(values, uidFieldData.load(ctx))
+            // if (keyFieldData is UidIndexFieldData) {
+            //     return AtomicUidFieldData(values, keyFieldData.load(ctx))
+            // } else if (keyFieldData is IndexNumericFieldData) {
+            //     return AtomicNumericFieldData(values, keyFieldData.load(ctx))
+            // } else {
+            //     return AtomicBytesFieldData(values, keyFieldData.load(ctx))
+            // }
+            return Atomic(values, keyFieldData.load(ctx))
         }
 
         override fun loadDirect(ctx: LeafReaderContext): Atomic {
@@ -219,13 +238,28 @@ class ExternalFileFieldMapper(
                 node: Map<String, Any>,
                 parserContext: Mapper.TypeParser.ParserContext): Mapper.Builder<*,*>
         {
-            return Builder(name)
+            val builder = Builder(name)
+            parseField(builder, name, node, parserContext)
+            val entries = node.entries.iterator()
+            for (entry in entries) {
+                if (entry.key == "key_field") {
+                    builder.keyField(entry.value.toString())
+                }
+            }
+            return builder
         }
     }
 
     class Builder : FieldMapper.Builder<Builder, ExternalFileFieldMapper> {
+
+        private var keyFieldName: String? = null
+
         constructor(name: String) : super(name, FIELD_TYPE, FIELD_TYPE) {
             this.builder = this
+        }
+
+        override fun fieldType(): ExternalFileFieldType {
+            return super.fieldType() as ExternalFileFieldType
         }
 
         override fun build(context: BuilderContext): ExternalFileFieldMapper {
@@ -241,6 +275,11 @@ class ExternalFileFieldMapper(
             defaultFieldType.setIndexOptions(IndexOptions.NONE)
             fieldType.setHasDocValues(false)
             defaultFieldType.setHasDocValues(false)
+        }
+
+        fun keyField(keyFieldName: String): Builder {
+            fieldType().setKeyFieldName(keyFieldName)
+            return this
         }
     }
 }

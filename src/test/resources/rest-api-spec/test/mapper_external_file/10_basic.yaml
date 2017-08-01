@@ -21,7 +21,6 @@
       id: 1
       body:
         name: "Hello from external file!"
-        price: 1.1
 
 - do:
     index:
@@ -30,7 +29,6 @@
       id: 3
       body:
         name: "Bye-bye"
-        price: 1.3
 
 - do:
     index:
@@ -39,7 +37,6 @@
       id: 2
       body:
         name: "Good morning"
-        price: 1.2
 
 - do:
     index:
@@ -48,7 +45,6 @@
       id: 4
       body:
         name: "Hey Jude"
-        price: 1.4
 
 - do:
     indices.refresh: {}
