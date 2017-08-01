@@ -28,5 +28,5 @@ repositories {
 }
 
 dependencies {
-    compile "org.jetbrains.kotlin:kotlin-runtime"
+    compile "org.jetbrains.kotlin:kotlin-stdlib"
 }

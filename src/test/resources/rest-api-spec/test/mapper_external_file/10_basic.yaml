@@ -20,8 +20,35 @@
       type: type1
       id: 1
       body:
-        name: "Test"
+        name: "Hello from external file!"
+        price: 1.1
+
+- do:
+    index:
+      index: test
+      type: type1
+      id: 3
+      body:
+        name: "Bye-bye"
+        price: 1.3
+
+- do:
+    index:
+      index: test
+      type: type1
+      id: 2
+      body:
+        name: "Good morning"
         price: 1.2
+
+- do:
+    index:
+      index: test
+      type: type1
+      id: 4
+      body:
+        name: "Hey Jude"
+        price: 1.4
 
 - do:
     indices.refresh: {}
@@ -36,9 +63,21 @@
               missing: 0
 
 - match:
-    hits.total: 1
+    hits.total: 4
 - match:
-    hits.hits.0._id: "1"
+    hits.hits.0._id: "3"
 - match:
-    # FIXME if you can
-    hits.hits.0._score: 1.2000000476837158
+    hits.hits.1._id: "2"
+- match:
+    hits.hits.2._id: "1"
+- match:
+    hits.hits.3._id: "4"
+# FIXME if you can
+- match:
+    hits.hits.0._score: 1.3
+- match:
+    hits.hits.1._score: 1.2
+- match:
+    hits.hits.2._score: 1.1
+- match:
+    hits.hits.3._score: 0.0

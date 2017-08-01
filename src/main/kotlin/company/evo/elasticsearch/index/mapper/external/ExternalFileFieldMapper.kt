@@ -25,6 +25,7 @@ import org.apache.lucene.search.SortField
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.index.Index
 import org.elasticsearch.index.IndexSettings
+import org.elasticsearch.index.fielddata.AtomicFieldData
 import org.elasticsearch.index.fielddata.AtomicNumericFieldData
 import org.elasticsearch.index.fielddata.IndexFieldData
 import org.elasticsearch.index.fielddata.IndexFieldDataCache
@@ -37,6 +38,8 @@ import org.elasticsearch.index.mapper.MappedFieldType
 import org.elasticsearch.index.mapper.Mapper
 import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.index.mapper.ParseContext
+import org.elasticsearch.index.mapper.Uid
+import org.elasticsearch.index.mapper.UidFieldMapper
 import org.elasticsearch.index.query.QueryShardContext
 import org.elasticsearch.index.query.QueryShardException
 import org.elasticsearch.indices.breaker.CircuitBreakerService
@@ -96,7 +99,10 @@ class ExternalFileFieldMapper(
                         cache: IndexFieldDataCache, breakerService: CircuitBreakerService,
                         mapperService: MapperService
                 ): IndexNumericFieldData {
-                    return ExternalFileFieldData(name(), indexSettings.getIndex())
+                    val uidFieldType = mapperService.fullName(UidFieldMapper.NAME)
+                    val uidFieldData = uidFieldType.fielddataBuilder().build(
+                            indexSettings, uidFieldType, cache, breakerService, mapperService)
+                    return ExternalFileFieldData(name(), indexSettings.getIndex(), uidFieldData)
                 }
             }
         }
@@ -106,28 +112,55 @@ class ExternalFileFieldMapper(
 
         private val fieldName: String
         private val index: Index
+        private val uidFieldData: IndexFieldData<*>
 
-        constructor(fieldName: String, index: Index) {
+        constructor(fieldName: String, index: Index, uidFieldData: IndexFieldData<*>) {
             this.fieldName = fieldName
             this.index = index
+            this.uidFieldData = uidFieldData
         }
 
-        class ExternalFileValues : SortedNumericDoubleValues() {
-            override fun setDocument(doc: Int) {
+        class ExternalFileValues : SortedNumericDoubleValues {
+
+            private var doc: Int = -1
+            private val values: Map<String, Double>
+            private val uids: SortedBinaryDocValues
+
+            constructor(values: Map<String, Double>, uids: SortedBinaryDocValues) {
+                this.values = values
+                this.uids = uids
             }
 
-            override fun valueAt(doc: Int): Double {
-                return 1.2
+            override fun setDocument(doc: Int) {
+                this.doc = doc
+                uids.setDocument(doc)
+            }
+
+            override fun valueAt(index: Int): Double {
+                return values.getOrDefault(getUid(doc).id(), 0.0)
             }
 
             override fun count(): Int {
-                return 1
+                return if (values.containsKey(getUid(doc).id())) 1 else 0
+            }
+
+            private fun getUid(doc: Int): Uid {
+                return Uid.createUid(uids.valueAt(0).utf8ToString())
             }
         }
 
         class Atomic : AtomicNumericFieldData {
+
+            private val values: Map<String, Double>
+            private val uidFieldData: AtomicFieldData
+
+            constructor(values: Map<String, Double>, uidFieldData: AtomicFieldData) {
+                this.values = values
+                this.uidFieldData = uidFieldData
+            }
+
             override fun getDoubleValues(): SortedNumericDoubleValues {
-                return ExternalFileValues()
+                return ExternalFileValues(values, uidFieldData.getBytesValues())
             }
 
             override fun getLongValues(): SortedNumericDocValues {
@@ -135,7 +168,7 @@ class ExternalFileFieldMapper(
             }
 
             override fun getScriptValues(): ScriptDocValues.Doubles {
-                return ScriptDocValues.Doubles(ExternalFileValues())
+                return ScriptDocValues.Doubles(ExternalFileValues(values, uidFieldData.getBytesValues()))
             }
 
             override fun getBytesValues(): SortedBinaryDocValues {
@@ -161,12 +194,13 @@ class ExternalFileFieldMapper(
             return fieldName
         }
 
-        override fun load(context: LeafReaderContext): Atomic {
-            return Atomic()
+        override fun load(ctx: LeafReaderContext): Atomic {
+            val values = hashMapOf("1" to 1.1, "2" to 1.2, "3" to 1.3)
+            return Atomic(values, uidFieldData.load(ctx))
         }
 
-        override fun loadDirect(context: LeafReaderContext): Atomic {
-            return load(context)
+        override fun loadDirect(ctx: LeafReaderContext): Atomic {
+            return load(ctx)
         }
 
         override fun sortField(
