@@ -68,6 +68,16 @@ commands:
     description: Compiles test source files
     run: [gradle, compileTestKotlin]
 
+  test: !Command
+    <<: *cmd-opts
+    description: Runs unit tests
+    run: [gradle, test]
+
+  integ-test: !Command
+    <<: *cmd-opts
+    description: Runs integration tests
+    run: [gradle, integTest]
+
   clean: !Command
     <<: *cmd-opts
     description: Deletes the build directory

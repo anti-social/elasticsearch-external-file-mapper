@@ -1,0 +1,44 @@
+---
+"Mapper ExternalFile":
+- do:
+    indices.create:
+      index: test
+      body:
+        mappings:
+          type1:
+            properties:
+              name:
+                type: text
+              price:
+                type: double
+              ext_price:
+                type: external_file
+
+- do:
+    index:
+      index: test
+      type: type1
+      id: 1
+      body:
+        name: "Test"
+        price: 1.2
+
+- do:
+    indices.refresh: {}
+
+- do:
+    search:
+      body:
+        query:
+          function_score:
+            field_value_factor:
+              field: ext_price
+              missing: 0
+
+- match:
+    hits.total: 1
+- match:
+    hits.hits.0._id: "1"
+- match:
+    # FIXME if you can
+    hits.hits.0._score: 1.2000000476837158

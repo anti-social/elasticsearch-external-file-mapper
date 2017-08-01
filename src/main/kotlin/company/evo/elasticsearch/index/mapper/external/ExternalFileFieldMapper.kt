@@ -19,16 +19,19 @@ package company.evo.elasticsearch.index.mapper.external
 import org.apache.lucene.index.IndexableField
 import org.apache.lucene.index.IndexOptions
 import org.apache.lucene.index.LeafReaderContext
+import org.apache.lucene.index.SortedNumericDocValues
 import org.apache.lucene.search.Query
 import org.apache.lucene.search.SortField
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.index.Index
 import org.elasticsearch.index.IndexSettings
-import org.elasticsearch.index.fielddata.AtomicFieldData
+import org.elasticsearch.index.fielddata.AtomicNumericFieldData
 import org.elasticsearch.index.fielddata.IndexFieldData
 import org.elasticsearch.index.fielddata.IndexFieldDataCache
+import org.elasticsearch.index.fielddata.IndexNumericFieldData
 import org.elasticsearch.index.fielddata.ScriptDocValues
 import org.elasticsearch.index.fielddata.SortedBinaryDocValues
+import org.elasticsearch.index.fielddata.SortedNumericDoubleValues
 import org.elasticsearch.index.mapper.FieldMapper
 import org.elasticsearch.index.mapper.MappedFieldType
 import org.elasticsearch.index.mapper.Mapper
@@ -46,7 +49,8 @@ public class ExternalFileFieldMapper(
         defaultFieldType: MappedFieldType,
         indexSettings: Settings,
         multiFields: MultiFields,
-        copyTo: CopyTo
+        // Do we need that argument?
+        copyTo: CopyTo?
 ) : FieldMapper(
         simpleName, fieldType, defaultFieldType,
         indexSettings, multiFields, copyTo) {
@@ -91,22 +95,51 @@ public class ExternalFileFieldMapper(
                         indexSettings: IndexSettings, fieldType: MappedFieldType,
                         cache: IndexFieldDataCache, breakerService: CircuitBreakerService,
                         mapperService: MapperService
-                ): IndexFieldData<*> {
-                    return ExternalFileFieldData(name())
+                ): IndexNumericFieldData {
+                    return ExternalFileFieldData(name(), indexSettings.getIndex())
                 }
             }
         }
     }
 
-    class ExternalFileFieldData(private val fieldName: String) : IndexFieldData<ExternalFileFieldData.Atomic> {
+    class ExternalFileFieldData : IndexNumericFieldData {
 
-        class Atomic : AtomicFieldData {
-            override public fun getScriptValues(): ScriptDocValues<Float> {
-                throw UnsupportedOperationException("Not implemented")
+        private val fieldName: String
+        private val index: Index
+
+        constructor(fieldName: String, index: Index) {
+            this.fieldName = fieldName
+            this.index = index
+        }
+
+        class ExternalFileValues : SortedNumericDoubleValues() {
+            override public fun setDocument(doc: Int) {
+            }
+
+            override public fun valueAt(doc: Int): Double {
+                return 1.2
+            }
+
+            override public fun count(): Int {
+                return 1
+            }
+        }
+
+        class Atomic : AtomicNumericFieldData {
+            override public fun getDoubleValues(): SortedNumericDoubleValues {
+                return ExternalFileValues()
+            }
+
+            override public fun getLongValues(): SortedNumericDocValues {
+                throw UnsupportedOperationException("getLongValues: not implemented")
+            }
+
+            override public fun getScriptValues(): ScriptDocValues.Doubles {
+                return ScriptDocValues.Doubles(ExternalFileValues())
             }
 
             override public fun getBytesValues(): SortedBinaryDocValues {
-                throw UnsupportedOperationException("Not implemented")
+                throw UnsupportedOperationException("getBytesValues: not implemented")
             }
 
             override public fun ramBytesUsed(): Long {
@@ -116,8 +149,12 @@ public class ExternalFileFieldMapper(
             override public fun close() {}
         }
 
+        override fun getNumericType(): IndexNumericFieldData.NumericType {
+            return IndexNumericFieldData.NumericType.DOUBLE
+        }
+
         override public fun index(): Index {
-            throw UnsupportedOperationException("Not Implemented")
+            return index
         }
 
         override public fun getFieldName(): String {
@@ -125,18 +162,18 @@ public class ExternalFileFieldMapper(
         }
 
         override public fun load(context: LeafReaderContext): Atomic {
-            throw UnsupportedOperationException("Not implemented")
+            return Atomic()
         }
 
         override public fun loadDirect(context: LeafReaderContext): Atomic {
-            throw UnsupportedOperationException("Not implemented")
+            return load(context)
         }
 
         override public fun sortField(
                 missingValue: Any?, sortMode: MultiValueMode,
                 nested: IndexFieldData.XFieldComparatorSource.Nested, reverse: Boolean): SortField
         {
-            throw UnsupportedOperationException("Not implemented")
+            throw UnsupportedOperationException("sortField: not implemented")
         }
 
         override public fun clear() {}
@@ -152,9 +189,10 @@ public class ExternalFileFieldMapper(
         }
     }
 
-    class Builder(name: String) :
-        FieldMapper.Builder<Builder, ExternalFileFieldMapper>(name, FIELD_TYPE, FIELD_TYPE)
-    {
+    class Builder : FieldMapper.Builder<Builder, ExternalFileFieldMapper> {
+        constructor(name: String) : super(name, FIELD_TYPE, FIELD_TYPE) {
+            this.builder = this
+        }
 
         override public fun build(context: BuilderContext): ExternalFileFieldMapper {
             setupFieldType(context)
@@ -167,8 +205,8 @@ public class ExternalFileFieldMapper(
             super.setupFieldType(context)
             fieldType.setIndexOptions(IndexOptions.NONE)
             defaultFieldType.setIndexOptions(IndexOptions.NONE)
-            fieldType.setHasDocValues(true)
-            defaultFieldType.setHasDocValues(true)
+            fieldType.setHasDocValues(false)
+            defaultFieldType.setHasDocValues(false)
         }
     }
 }

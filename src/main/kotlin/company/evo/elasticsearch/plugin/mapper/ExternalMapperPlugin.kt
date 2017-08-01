@@ -22,10 +22,14 @@ import org.elasticsearch.index.mapper.Mapper
 import org.elasticsearch.plugins.MapperPlugin
 import org.elasticsearch.plugins.Plugin
 
+import company.evo.elasticsearch.index.mapper.external.ExternalFileFieldMapper
+
 
 class ExternalMapperPlugin : Plugin(), MapperPlugin {
 
     override fun getMappers() : Map<String, Mapper.TypeParser> {
-        return Collections.emptyMap()
+        return Collections.singletonMap(
+                ExternalFileFieldMapper.CONTENT_TYPE,
+                ExternalFileFieldMapper.TypeParser())
     }
 }
