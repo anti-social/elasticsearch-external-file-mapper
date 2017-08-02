@@ -16,6 +16,8 @@
 
 package company.evo.elasticsearch.index.mapper.external
 
+import java.nio.file.Path
+
 import org.apache.lucene.index.IndexableField
 import org.apache.lucene.index.IndexOptions
 import org.apache.lucene.index.LeafReaderContext
@@ -56,7 +58,8 @@ class ExternalFileFieldMapper(
         indexSettings: Settings,
         multiFields: MultiFields,
         // Do we need that argument?
-        copyTo: CopyTo?
+        copyTo: CopyTo?,
+        private val dataPath: Path
 ) : FieldMapper(
         simpleName, fieldType, defaultFieldType,
         indexSettings, multiFields, copyTo) {
@@ -77,10 +80,15 @@ class ExternalFileFieldMapper(
     override fun parseCreateField(context: ParseContext, fields: List<IndexableField>) {}
 
     class ExternalFileFieldType : MappedFieldType {
+        private var dataPath: Path? = null
         private var keyFieldName: String? = null
 
         constructor()
         constructor(ref: ExternalFileFieldType) : super(ref)
+
+        fun setDataPath(dataPath: Path) {
+            this.dataPath = dataPath
+        }
 
         fun setKeyFieldName(keyFieldName: String) {
             this.keyFieldName = keyFieldName
@@ -114,7 +122,7 @@ class ExternalFileFieldMapper(
                     }
                     val keyFieldData = keyFieldType.fielddataBuilder().build(
                             indexSettings, keyFieldType, cache, breakerService, mapperService)
-                    return ExternalFileFieldData(name(), indexSettings.getIndex(), keyFieldData)
+                    return ExternalFileFieldData(name(), indexSettings.getIndex(), keyFieldData, dataPath)
                 }
             }
         }
@@ -125,8 +133,9 @@ class ExternalFileFieldMapper(
         private val fieldName: String
         private val index: Index
         private val keyFieldData: IndexFieldData<*>
+        private val dataPath: Path? = null
 
-        constructor(fieldName: String, index: Index, keyFieldData: IndexFieldData<*>) {
+        constructor(fieldName: String, index: Index, keyFieldData: IndexFieldData<*>, dataPath: Path?) {
             this.fieldName = fieldName
             this.index = index
             this.keyFieldData = keyFieldData
@@ -232,13 +241,14 @@ class ExternalFileFieldMapper(
         override fun clear() {}
     }
 
-    class TypeParser : Mapper.TypeParser {
+    class TypeParser(private val dataPath: Path) : Mapper.TypeParser {
+
         override fun parse(
                 name: String,
                 node: Map<String, Any>,
                 parserContext: Mapper.TypeParser.ParserContext): Mapper.Builder<*,*>
         {
-            val builder = Builder(name)
+            val builder = Builder(name, dataPath)
             parseField(builder, name, node, parserContext)
             val entries = node.entries.iterator()
             for (entry in entries) {
@@ -252,10 +262,12 @@ class ExternalFileFieldMapper(
 
     class Builder : FieldMapper.Builder<Builder, ExternalFileFieldMapper> {
 
+        private val dataPath: Path
         private var keyFieldName: String? = null
 
-        constructor(name: String) : super(name, FIELD_TYPE, FIELD_TYPE) {
+        constructor(name: String, dataPath: Path) : super(name, FIELD_TYPE, FIELD_TYPE) {
             this.builder = this
+            this.dataPath = dataPath
         }
 
         override fun fieldType(): ExternalFileFieldType {
@@ -266,11 +278,12 @@ class ExternalFileFieldMapper(
             setupFieldType(context)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
-                    multiFieldsBuilder.build(this, context), copyTo)
+                    multiFieldsBuilder.build(this, context), copyTo, dataPath)
         }
 
         override fun setupFieldType(context: BuilderContext) {
             super.setupFieldType(context)
+            fieldType().setDataPath(dataPath)
             fieldType.setIndexOptions(IndexOptions.NONE)
             defaultFieldType.setIndexOptions(IndexOptions.NONE)
             fieldType.setHasDocValues(false)

@@ -20,7 +20,9 @@ import java.util.Arrays
 import java.util.Collections
 
 import org.elasticsearch.common.compress.CompressedXContent
+import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.XContentFactory
+import org.elasticsearch.env.Environment
 import org.elasticsearch.index.IndexService
 import org.elasticsearch.index.mapper.DocumentMapperParser
 import org.elasticsearch.index.mapper.Mapper.TypeParser
@@ -43,10 +45,14 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
 
     @Before fun setup() {
         indexService = this.createIndex("test")
+        val nodeSettings = Settings.builder()
+                .put(Environment.PATH_HOME_SETTING.getKey(), createTempDir())
+                .build()
+        val env = Environment(nodeSettings)
         mapperRegistry = MapperRegistry(
             Collections.singletonMap(
                 ExternalFileFieldMapper.CONTENT_TYPE,
-                ExternalFileFieldMapper.TypeParser() as TypeParser),
+                ExternalFileFieldMapper.TypeParser(env.dataFiles()[0]) as TypeParser),
             Collections.emptyMap())
         parser = DocumentMapperParser(
             indexService.getIndexSettings(), indexService.mapperService(),

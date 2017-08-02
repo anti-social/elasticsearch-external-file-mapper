@@ -16,8 +16,11 @@
 
 package company.evo.elasticsearch.plugin.mapper
 
+import java.nio.file.Path
 import java.util.Collections
 
+import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.env.Environment
 import org.elasticsearch.index.mapper.Mapper
 import org.elasticsearch.plugins.MapperPlugin
 import org.elasticsearch.plugins.Plugin
@@ -25,11 +28,18 @@ import org.elasticsearch.plugins.Plugin
 import company.evo.elasticsearch.index.mapper.external.ExternalFileFieldMapper
 
 
-class ExternalMapperPlugin : Plugin(), MapperPlugin {
+class ExternalMapperPlugin : Plugin, MapperPlugin {
+
+    private val env: Environment
+
+    constructor(settings: Settings) {
+        this.env = Environment(settings)
+    }
 
     override fun getMappers() : Map<String, Mapper.TypeParser> {
+        val dataPath = env.dataFiles()[0]
         return Collections.singletonMap(
                 ExternalFileFieldMapper.CONTENT_TYPE,
-                ExternalFileFieldMapper.TypeParser())
+                ExternalFileFieldMapper.TypeParser(dataPath))
     }
 }
