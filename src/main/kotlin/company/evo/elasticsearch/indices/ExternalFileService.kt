@@ -43,7 +43,9 @@ class ExternalFileService {
 
     fun getValues(indexName: String, fieldName: String): Map<String, Double> {
         val extFilePath = getIndexDir(indexName).resolve(fieldName + ".txt")
-        return parse(extFilePath)
+        val values = parse(extFilePath)
+        logger.info("Loaded ${values.size} values for [${fieldName}] field of [${indexName}] index from file [${extFilePath}]")
+        return values
     }
 
     fun getIndexDir(indexName: String): Path {
