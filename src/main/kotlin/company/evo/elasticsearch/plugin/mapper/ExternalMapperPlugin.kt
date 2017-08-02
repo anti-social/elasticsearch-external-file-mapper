@@ -26,20 +26,21 @@ import org.elasticsearch.plugins.MapperPlugin
 import org.elasticsearch.plugins.Plugin
 
 import company.evo.elasticsearch.index.mapper.external.ExternalFileFieldMapper
+import company.evo.elasticsearch.indices.ExternalFileService
 
 
 class ExternalMapperPlugin : Plugin, MapperPlugin {
 
-    private val env: Environment
+    private val extFileService: ExternalFileService
 
     constructor(settings: Settings) {
-        this.env = Environment(settings)
+        val env = Environment(settings)
+        this.extFileService = ExternalFileService(env)
     }
 
-    override fun getMappers() : Map<String, Mapper.TypeParser> {
-        val dataPath = env.dataFiles()[0]
+    override fun getMappers(): Map<String, Mapper.TypeParser> {
         return Collections.singletonMap(
                 ExternalFileFieldMapper.CONTENT_TYPE,
-                ExternalFileFieldMapper.TypeParser(dataPath))
+                ExternalFileFieldMapper.TypeParser(extFileService))
     }
 }

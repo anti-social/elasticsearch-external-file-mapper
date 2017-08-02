@@ -16,8 +16,6 @@
 
 package company.evo.elasticsearch.index.mapper.external
 
-import java.nio.file.Path
-
 import org.apache.lucene.index.IndexableField
 import org.apache.lucene.index.IndexOptions
 import org.apache.lucene.index.LeafReaderContext
@@ -39,6 +37,7 @@ import org.elasticsearch.index.mapper.FieldMapper
 import org.elasticsearch.index.mapper.IdFieldMapper
 import org.elasticsearch.index.mapper.MappedFieldType
 import org.elasticsearch.index.mapper.Mapper
+import org.elasticsearch.index.mapper.MapperParsingException
 import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.index.mapper.ParseContext
 import org.elasticsearch.index.mapper.Uid
@@ -50,6 +49,8 @@ import org.elasticsearch.search.MultiValueMode
 
 import org.elasticsearch.index.mapper.TypeParsers.parseField
 
+import company.evo.elasticsearch.indices.ExternalFileService
+
 
 class ExternalFileFieldMapper(
         simpleName: String,
@@ -58,8 +59,7 @@ class ExternalFileFieldMapper(
         indexSettings: Settings,
         multiFields: MultiFields,
         // Do we need that argument?
-        copyTo: CopyTo?,
-        private val dataPath: Path
+        copyTo: CopyTo?
 ) : FieldMapper(
         simpleName, fieldType, defaultFieldType,
         indexSettings, multiFields, copyTo) {
@@ -80,14 +80,14 @@ class ExternalFileFieldMapper(
     override fun parseCreateField(context: ParseContext, fields: List<IndexableField>) {}
 
     class ExternalFileFieldType : MappedFieldType {
-        private var dataPath: Path? = null
+        private var extFileService: ExternalFileService? = null
         private var keyFieldName: String? = null
 
         constructor()
         constructor(ref: ExternalFileFieldType) : super(ref)
 
-        fun setDataPath(dataPath: Path) {
-            this.dataPath = dataPath
+        fun setExtFileService(extFileService: ExternalFileService) {
+            this.extFileService = extFileService
         }
 
         fun setKeyFieldName(keyFieldName: String) {
@@ -107,6 +107,7 @@ class ExternalFileFieldMapper(
         }
 
         override fun fielddataBuilder(): IndexFieldData.Builder {
+            val extFileService = this.extFileService
             return object : IndexFieldData.Builder {
                 override fun build(
                         indexSettings: IndexSettings, fieldType: MappedFieldType,
@@ -122,7 +123,11 @@ class ExternalFileFieldMapper(
                     }
                     val keyFieldData = keyFieldType.fielddataBuilder().build(
                             indexSettings, keyFieldType, cache, breakerService, mapperService)
-                    return ExternalFileFieldData(name(), indexSettings.getIndex(), keyFieldData, dataPath)
+                    if (extFileService == null) {
+                        throw IllegalArgumentException("Missing external file service")
+                    }
+                    return ExternalFileFieldData(
+                            name(), indexSettings.getIndex(), keyFieldData, extFileService)
                 }
             }
         }
@@ -133,12 +138,18 @@ class ExternalFileFieldMapper(
         private val fieldName: String
         private val index: Index
         private val keyFieldData: IndexFieldData<*>
-        private val dataPath: Path? = null
+        private val extFileService: ExternalFileService
 
-        constructor(fieldName: String, index: Index, keyFieldData: IndexFieldData<*>, dataPath: Path?) {
+        constructor(
+                fieldName: String,
+                index: Index,
+                keyFieldData: IndexFieldData<*>,
+                extFileService: ExternalFileService
+        ) {
             this.fieldName = fieldName
             this.index = index
             this.keyFieldData = keyFieldData
+            this.extFileService = extFileService
         }
 
         class ExternalFileValues : SortedNumericDoubleValues {
@@ -216,7 +227,7 @@ class ExternalFileFieldMapper(
         }
 
         override fun load(ctx: LeafReaderContext): Atomic {
-            val values = hashMapOf("1" to 1.1, "2" to 1.2, "3" to 1.3)
+            val values = extFileService.getValues(index, fieldName)
             // if (keyFieldData is UidIndexFieldData) {
             //     return AtomicUidFieldData(values, keyFieldData.load(ctx))
             // } else if (keyFieldData is IndexNumericFieldData) {
@@ -241,19 +252,27 @@ class ExternalFileFieldMapper(
         override fun clear() {}
     }
 
-    class TypeParser(private val dataPath: Path) : Mapper.TypeParser {
+    class TypeParser(
+            private val extFileService: ExternalFileService
+    ) : Mapper.TypeParser {
 
         override fun parse(
                 name: String,
                 node: Map<String, Any>,
                 parserContext: Mapper.TypeParser.ParserContext): Mapper.Builder<*,*>
         {
-            val builder = Builder(name, dataPath)
-            parseField(builder, name, node, parserContext)
+            val builder = Builder(name, extFileService)
             val entries = node.entries.iterator()
             for (entry in entries) {
-                if (entry.key == "key_field") {
-                    builder.keyField(entry.value.toString())
+                when (entry.key) {
+                    "type" -> {}
+                    "key_field" -> {
+                        builder.keyField(entry.value.toString())
+                    }
+                    else -> {
+                        throw MapperParsingException(
+                            "Setting [${entry.key}] cannot be modified for field [$name]")
+                    }
                 }
             }
             return builder
@@ -262,12 +281,16 @@ class ExternalFileFieldMapper(
 
     class Builder : FieldMapper.Builder<Builder, ExternalFileFieldMapper> {
 
-        private val dataPath: Path
+        private val extFileService: ExternalFileService
         private var keyFieldName: String? = null
 
-        constructor(name: String, dataPath: Path) : super(name, FIELD_TYPE, FIELD_TYPE) {
+        constructor(
+                name: String,
+                extFileService: ExternalFileService
+        ) : super(name, FIELD_TYPE, FIELD_TYPE)
+        {
             this.builder = this
-            this.dataPath = dataPath
+            this.extFileService = extFileService
         }
 
         override fun fieldType(): ExternalFileFieldType {
@@ -278,12 +301,12 @@ class ExternalFileFieldMapper(
             setupFieldType(context)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
-                    multiFieldsBuilder.build(this, context), copyTo, dataPath)
+                    multiFieldsBuilder.build(this, context), copyTo)
         }
 
         override fun setupFieldType(context: BuilderContext) {
             super.setupFieldType(context)
-            fieldType().setDataPath(dataPath)
+            fieldType().setExtFileService(extFileService)
             fieldType.setIndexOptions(IndexOptions.NONE)
             defaultFieldType.setIndexOptions(IndexOptions.NONE)
             fieldType.setHasDocValues(false)

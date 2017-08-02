@@ -16,6 +16,7 @@
 
 package company.evo.elasticsearch.index.mapper.external
 
+import java.nio.file.Files
 import java.util.Arrays
 import java.util.Collections
 
@@ -36,25 +37,29 @@ import org.hamcrest.Matchers.containsString
 
 import org.junit.Before
 
+import company.evo.elasticsearch.indices.ExternalFileService
+
 
 class ExternalFieldMapperTests : ESSingleNodeTestCase() {
 
     lateinit var indexService: IndexService
+    lateinit var extFileService: ExternalFileService
     lateinit var mapperRegistry: MapperRegistry
     lateinit var parser: DocumentMapperParser
 
     @Before fun setup() {
-        indexService = this.createIndex("test")
+        this.indexService = this.createIndex("test")
         val nodeSettings = Settings.builder()
                 .put(Environment.PATH_HOME_SETTING.getKey(), createTempDir())
                 .build()
         val env = Environment(nodeSettings)
-        mapperRegistry = MapperRegistry(
+        this.extFileService = ExternalFileService(env)
+        this.mapperRegistry = MapperRegistry(
             Collections.singletonMap(
                 ExternalFileFieldMapper.CONTENT_TYPE,
-                ExternalFileFieldMapper.TypeParser(env.dataFiles()[0]) as TypeParser),
+                ExternalFileFieldMapper.TypeParser(extFileService) as TypeParser),
             Collections.emptyMap())
-        parser = DocumentMapperParser(
+        this.parser = DocumentMapperParser(
             indexService.getIndexSettings(), indexService.mapperService(),
             indexService.getIndexAnalyzers(), indexService.xContentRegistry(),
             indexService.similarityService(), mapperRegistry,
@@ -93,7 +98,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
             fail("Expected a mapper parsing exception")
         } catch (e: MapperParsingException) {
             assertThat(e.message,
-                containsString("Mapping definition for [ext_field] has unsupported parameters"))
+                containsString("Setting [doc_values] cannot be modified for field [ext_field]"))
         }
     }
 
@@ -110,7 +115,27 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
             fail("Expected a mapper parsing exception")
         } catch (e: MapperParsingException) {
             assertThat(e.message,
-            containsString("Mapping definition for [ext_field] has unsupported parameters"))
+                containsString("Setting [stored] cannot be modified for field [ext_field]"))
+        }
+    }
+
+    fun testExternalFileService() {
+        copyTestResources()
+        val values = extFileService.getValues("test", "ext_price")
+        assertEquals(3, values.size)
+        assertEquals(1.1, values.get("1"))
+        assertEquals(1.2, values.get("2"))
+        assertEquals(1.3, values.get("3"))
+        assertEquals(null, values.get("4"))
+    }
+
+    private fun copyTestResources() {
+        val indexPath = extFileService.getIndexDir("test")
+        Files.createDirectories(indexPath)
+        val resourcePath = getDataPath("/indices")
+        Files.newInputStream(resourcePath.resolve("ext_price.txt")).use {
+            val extFilePath = indexPath.resolve("ext_price.txt")
+            Files.copy(it, extFilePath)
         }
     }
 }
