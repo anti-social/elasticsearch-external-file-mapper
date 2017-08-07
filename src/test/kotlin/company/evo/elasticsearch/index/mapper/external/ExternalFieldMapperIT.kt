@@ -40,8 +40,7 @@ import company.evo.elasticsearch.plugin.mapper.ExternalMapperPlugin
 
 
 @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.TEST, numDataNodes=0)
-// @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.SUITE)
-// @LuceneTestCase.SuppressFileSystems("ExtrasFS")
+@ESIntegTestCase.SuppressLocalMode
 public class ExternalFieldMapperIT : ESIntegTestCase() {
 
     override fun nodePlugins(): Collection<Class<out Plugin>> {
@@ -51,18 +50,20 @@ public class ExternalFieldMapperIT : ESIntegTestCase() {
     override fun ignoreExternalCluster(): Boolean { return true }
 
     public fun test() {
-        internalCluster().startNode()
         val dataPath = createTempDir()
         val homePath = createTempDir()
         val settings = Settings.builder()
                 .put(Environment.PATH_HOME_SETTING.getKey(), homePath)
                 .put(Environment.PATH_DATA_SETTING.getKey(), dataPath)
                 .build()
-        val node = internalCluster().startDataOnlyNode(settings)
+        val node = internalCluster().startNode(settings)
         val nodePaths = internalCluster()
                 .getInstance(NodeEnvironment::class.java, node)
                 .nodeDataPaths()
         assertEquals(1, nodePaths.size)
+
+        val nodesResponse = client().admin().cluster().prepareNodesInfo().execute().actionGet()
+        assertEquals(1, nodesResponse.getNodes().size);
 
         val extFileService = ExternalFileService(Environment(settings))
         copyTestResources(extFileService)

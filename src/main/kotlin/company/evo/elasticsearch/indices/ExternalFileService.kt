@@ -31,6 +31,7 @@ import org.elasticsearch.index.Index
 class ExternalFileService {
     private val logger: Logger
     private val env: Environment
+    private var values: Map<String, Double>? = null
 
     constructor(env: Environment) {
         this.env = env
@@ -41,10 +42,16 @@ class ExternalFileService {
         return getValues(index.getName(), fieldName)
     }
 
+    @Synchronized
     fun getValues(indexName: String, fieldName: String): Map<String, Double> {
         val extFilePath = getIndexDir(indexName).resolve(fieldName + ".txt")
-        val values = parse(extFilePath)
-        logger.info("Loaded ${values.size} values for [${fieldName}] field of [${indexName}] index from file [${extFilePath}]")
+        val values = this.values
+        if (values == null) {
+            val values = parse(extFilePath)
+            logger.info("Loaded ${values.size} values for [${fieldName}] field of [${indexName}] index from file [${extFilePath}]")
+            this.values = values
+            return values
+        }
         return values
     }
 

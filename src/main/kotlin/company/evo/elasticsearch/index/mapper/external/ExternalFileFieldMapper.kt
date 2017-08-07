@@ -126,8 +126,9 @@ class ExternalFileFieldMapper(
                     if (extFileService == null) {
                         throw IllegalArgumentException("Missing external file service")
                     }
+                    val values = extFileService.getValues(indexSettings.getIndex(), name())
                     return ExternalFileFieldData(
-                            name(), indexSettings.getIndex(), keyFieldData, extFileService)
+                            name(), indexSettings.getIndex(), keyFieldData, values)
                 }
             }
         }
@@ -138,18 +139,18 @@ class ExternalFileFieldMapper(
         private val fieldName: String
         private val index: Index
         private val keyFieldData: IndexFieldData<*>
-        private val extFileService: ExternalFileService
+        private val values: Map<String, Double>
 
         constructor(
                 fieldName: String,
                 index: Index,
                 keyFieldData: IndexFieldData<*>,
-                extFileService: ExternalFileService
+                values: Map<String, Double>
         ) {
             this.fieldName = fieldName
             this.index = index
             this.keyFieldData = keyFieldData
-            this.extFileService = extFileService
+            this.values = values
         }
 
         class ExternalFileValues : SortedNumericDoubleValues {
@@ -227,7 +228,7 @@ class ExternalFileFieldMapper(
         }
 
         override fun load(ctx: LeafReaderContext): Atomic {
-            val values = extFileService.getValues(index, fieldName)
+            // val values = extFileService.getValues(index, fieldName)
             // if (keyFieldData is UidIndexFieldData) {
             //     return AtomicUidFieldData(values, keyFieldData.load(ctx))
             // } else if (keyFieldData is IndexNumericFieldData) {
