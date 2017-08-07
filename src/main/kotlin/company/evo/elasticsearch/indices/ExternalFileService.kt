@@ -19,7 +19,6 @@ package company.evo.elasticsearch.indices
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.HashMap
 
 import org.apache.logging.log4j.Logger
 
@@ -31,10 +30,14 @@ import org.elasticsearch.index.Index
 class ExternalFileService {
     private val logger: Logger
     private val env: Environment
-    private var values: Map<String, Double>? = null
+    private val values: MutableMap<FileKey, FileValues>
+
+    private data class FileKey(val indexName: String, val fileName: String)
+    private data class FileValues(val values: Map<String, Double>)
 
     constructor(env: Environment) {
         this.env = env
+        this.values = HashMap()
         this.logger = Loggers.getLogger(ExternalFileService::class.java)
     }
 
@@ -45,22 +48,24 @@ class ExternalFileService {
     @Synchronized
     fun getValues(indexName: String, fieldName: String): Map<String, Double> {
         val extFilePath = getIndexDir(indexName).resolve(fieldName + ".txt")
-        val values = this.values
-        if (values == null) {
-            val values = parse(extFilePath)
-            logger.info("Loaded ${values.size} values for [${fieldName}] field of [${indexName}] index from file [${extFilePath}]")
-            this.values = values
-            return values
+        val key = FileKey(indexName, fieldName)
+        val fileValues = this.values.getOrPut(key) {
+            val fileValues = parse(extFilePath)
+            logger.info("Loaded ${fileValues.values.size} values " +
+                "for [${fieldName}] field of [${indexName}] index from file [${extFilePath}]")
+            fileValues
         }
-        return values
+        return fileValues.values
     }
 
     fun getIndexDir(indexName: String): Path {
         // TODO check and make it right
-        return env.dataFiles()[0].resolve(indexName)
+        return env.dataFiles()[0]
+                .resolve("external_files")
+                .resolve(indexName)
     }
 
-    private fun parse(path: Path): Map<String, Double> {
+    private fun parse(path: Path): FileValues {
         val values = HashMap<String, Double>()
         try {
             Files.newBufferedReader(path).use {
@@ -81,6 +86,6 @@ class ExternalFileService {
         } catch (e: IOException) {
             logger.warn("Cannot read file: " + e.message)
         }
-        return values
+        return FileValues(values)
     }
 }
