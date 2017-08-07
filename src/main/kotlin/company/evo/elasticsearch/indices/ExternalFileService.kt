@@ -25,6 +25,7 @@ import org.apache.logging.log4j.Logger
 
 import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.env.Environment
+import org.elasticsearch.env.NodeEnvironment
 import org.elasticsearch.index.Index
 
 
@@ -38,26 +39,24 @@ class ExternalFileService {
         this.logger = Loggers.getLogger(ExternalFileService::class.java)
     }
 
-    fun getValues(index: Index, fieldName: String): Map<String, Double> {
-        return getValues(index.getName(), fieldName)
-    }
-
     @Synchronized
-    fun getValues(indexName: String, fieldName: String): Map<String, Double> {
-        val extFilePath = getIndexDir(indexName).resolve(fieldName + ".txt")
+    fun getValues(index: Index, fieldName: String): Map<String, Double> {
+        val extFilePath = getIndexDir(index).resolve(fieldName + ".txt")
         val values = this.values
         if (values == null) {
             val values = parse(extFilePath)
-            logger.info("Loaded ${values.size} values for [${fieldName}] field of [${indexName}] index from file [${extFilePath}]")
+            logger.info("Loaded ${values.size} values for [${fieldName}] field of [${index}] index from file [${extFilePath}]")
             this.values = values
             return values
         }
         return values
     }
 
-    fun getIndexDir(indexName: String): Path {
+    fun getIndexDir(index: Index): Path {
         // TODO check and make it right
-        return env.dataFiles()[0].resolve(indexName)
+        return env.dataFiles()[0]
+                .resolve(NodeEnvironment.INDICES_FOLDER)
+                .resolve(index.getUUID())
     }
 
     private fun parse(path: Path): Map<String, Double> {

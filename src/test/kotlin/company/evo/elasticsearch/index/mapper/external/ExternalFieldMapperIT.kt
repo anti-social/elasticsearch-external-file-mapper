@@ -27,6 +27,7 @@ import org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder
 import org.elasticsearch.env.Environment
 import org.elasticsearch.env.NodeEnvironment
 import org.elasticsearch.plugins.Plugin
+import org.elasticsearch.index.Index
 import org.elasticsearch.index.query.QueryBuilders.functionScoreQuery
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders.fieldValueFactorFunction
 import org.elasticsearch.search.builder.SearchSourceBuilder.searchSource
@@ -60,13 +61,13 @@ public class ExternalFieldMapperIT : ESIntegTestCase() {
         val nodePaths = internalCluster()
                 .getInstance(NodeEnvironment::class.java, node)
                 .nodeDataPaths()
+        println("> nodePath: ${nodePaths[0]}")
         assertEquals(1, nodePaths.size)
 
         val nodesResponse = client().admin().cluster().prepareNodesInfo().execute().actionGet()
         assertEquals(1, nodesResponse.getNodes().size);
 
         val extFileService = ExternalFileService(Environment(settings))
-        copyTestResources(extFileService)
 
         val indexName = "test"
         client().admin()
@@ -84,6 +85,20 @@ public class ExternalFieldMapperIT : ESIntegTestCase() {
                             .endObject()
                         .endObject().endObject().endObject())
                 .get()
+
+        val indexResp = client().admin()
+                .indices()
+                .prepareGetIndex()
+                .setIndices(indexName)
+                .get()
+        val indexUUID = indexResp.settings()
+                .get(indexName)
+                .getAsSettings("index")
+                .get("uuid")
+        val index = Index(indexName, indexUUID)
+        copyTestResources(extFileService, index)
+
+        Files.walk(dataPath).forEach { println("> $it") }
 
         client().prepareIndex("test", "product", "1")
                 .setSource(
@@ -139,8 +154,8 @@ public class ExternalFieldMapperIT : ESIntegTestCase() {
         assertThat(hits.getAt(3).getScore(), equalTo(0.0f))
     }
 
-    private fun copyTestResources(extFileService: ExternalFileService) {
-        val indexPath = extFileService.getIndexDir("test")
+    private fun copyTestResources(extFileService: ExternalFileService, index: Index) {
+        val indexPath = extFileService.getIndexDir(index)
         Files.createDirectories(indexPath)
         val resourcePath = getDataPath("/indices")
         Files.newInputStream(resourcePath.resolve("ext_price.txt")).use {

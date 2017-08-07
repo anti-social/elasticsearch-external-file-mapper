@@ -24,6 +24,7 @@ import org.elasticsearch.common.compress.CompressedXContent
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.XContentFactory
 import org.elasticsearch.env.Environment
+import org.elasticsearch.index.Index
 import org.elasticsearch.index.IndexService
 import org.elasticsearch.index.mapper.DocumentMapperParser
 import org.elasticsearch.index.mapper.Mapper.TypeParser
@@ -120,8 +121,9 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
     }
 
     fun testExternalFileService() {
-        copyTestResources()
-        val values = extFileService.getValues("test", "ext_price")
+        val index = Index("test", "12345678")
+        copyTestResources(index)
+        val values = extFileService.getValues(index, "ext_price")
         assertEquals(3, values.size)
         assertEquals(1.1, values.get("1"))
         assertEquals(1.2, values.get("2"))
@@ -129,8 +131,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         assertEquals(null, values.get("4"))
     }
 
-    private fun copyTestResources() {
-        val indexPath = extFileService.getIndexDir("test")
+    private fun copyTestResources(index: Index) {
+        val indexPath = extFileService.getIndexDir(index)
         Files.createDirectories(indexPath)
         val resourcePath = getDataPath("/indices")
         Files.newInputStream(resourcePath.resolve("ext_price.txt")).use {
