@@ -128,7 +128,7 @@ class ExternalFileFieldMapper(
                     }
                     val values = extFileService.getValues(indexSettings.getIndex(), name())
                     return ExternalFileFieldData(
-                            name(), indexSettings.getIndex(), keyFieldData, values)
+                            name(), indexSettings.getIndex(), keyFieldData, values, cache)
                 }
             }
         }
@@ -140,17 +140,20 @@ class ExternalFileFieldMapper(
         private val index: Index
         private val keyFieldData: IndexFieldData<*>
         private val values: Map<String, Double>
+        private val cache: IndexFieldDataCache
 
         constructor(
                 fieldName: String,
                 index: Index,
                 keyFieldData: IndexFieldData<*>,
-                values: Map<String, Double>
+                values: Map<String, Double>,
+                cache: IndexFieldDataCache
         ) {
             this.fieldName = fieldName
             this.index = index
             this.keyFieldData = keyFieldData
             this.values = values
+            this.cache = cache
         }
 
         class ExternalFileValues : SortedNumericDoubleValues {
@@ -227,7 +230,7 @@ class ExternalFileFieldMapper(
             return fieldName
         }
 
-        override fun load(ctx: LeafReaderContext): Atomic {
+        override fun load(ctx: LeafReaderContext): AtomicNumericFieldData {
             // val values = extFileService.getValues(index, fieldName)
             // if (keyFieldData is UidIndexFieldData) {
             //     return AtomicUidFieldData(values, keyFieldData.load(ctx))
@@ -236,11 +239,15 @@ class ExternalFileFieldMapper(
             // } else {
             //     return AtomicBytesFieldData(values, keyFieldData.load(ctx))
             // }
-            return Atomic(values, keyFieldData.load(ctx))
+            println(">>> ExternalFileFieldData.load")
+            println(">>> maxDoc: ${ctx.reader().maxDoc()}")
+            return cache.load(ctx, this)
         }
 
-        override fun loadDirect(ctx: LeafReaderContext): Atomic {
-            return load(ctx)
+        override fun loadDirect(ctx: LeafReaderContext): AtomicNumericFieldData {
+            println(">>> ExternalFileFieldData.loadDirect")
+            return Atomic(values, keyFieldData.load(ctx))
+//            return load(ctx)
         }
 
         override fun sortField(
