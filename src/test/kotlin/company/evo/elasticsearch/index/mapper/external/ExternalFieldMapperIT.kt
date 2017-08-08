@@ -41,7 +41,7 @@ import company.evo.elasticsearch.plugin.mapper.ExternalMapperPlugin
 
 @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.TEST, numDataNodes=0)
 @ESIntegTestCase.SuppressLocalMode
-public class ExternalFieldMapperIT : ESIntegTestCase() {
+class ExternalFieldMapperIT : ESIntegTestCase() {
 
     override fun nodePlugins(): Collection<Class<out Plugin>> {
         return Collections.singleton(ExternalMapperPlugin::class.java)
@@ -49,12 +49,12 @@ public class ExternalFieldMapperIT : ESIntegTestCase() {
 
     override fun ignoreExternalCluster(): Boolean { return true }
 
-    public fun test() {
+    fun test() {
         val dataPath = createTempDir()
         val homePath = createTempDir()
         val settings = Settings.builder()
-                .put(Environment.PATH_HOME_SETTING.getKey(), homePath)
-                .put(Environment.PATH_DATA_SETTING.getKey(), dataPath)
+                .put(Environment.PATH_HOME_SETTING.key, homePath)
+                .put(Environment.PATH_DATA_SETTING.key, dataPath)
                 .build()
         val node = internalCluster().startNode(settings)
         val nodePaths = internalCluster()
@@ -62,8 +62,10 @@ public class ExternalFieldMapperIT : ESIntegTestCase() {
                 .nodeDataPaths()
         assertEquals(1, nodePaths.size)
 
-        val nodesResponse = client().admin().cluster().prepareNodesInfo().execute().actionGet()
-        assertEquals(1, nodesResponse.getNodes().size);
+        val nodesResponse = client().admin().cluster()
+                .prepareNodesInfo()
+                .get()
+        assertEquals(1, nodesResponse.nodes.size)
 
         val extFileService = ExternalFileService(Environment(settings))
         copyTestResources(extFileService)
@@ -114,7 +116,7 @@ public class ExternalFieldMapperIT : ESIntegTestCase() {
                         .endObject())
                 .get()
 
-        client().admin().indices().prepareRefresh().execute().actionGet()
+        client().admin().indices().prepareRefresh().get()
 
         val response = client().search(
                 searchRequest()
@@ -127,16 +129,16 @@ public class ExternalFieldMapperIT : ESIntegTestCase() {
                         .explain(false)))
                 .actionGet()
         assertNoFailures(response)
-        val hits = response.getHits()
-        assertThat(hits.getHits().size, equalTo(4))
-        assertThat(hits.getAt(0).getId(), equalTo("3"))
-        assertThat(hits.getAt(0).getScore(), equalTo(1.3f))
-        assertThat(hits.getAt(1).getId(), equalTo("2"))
-        assertThat(hits.getAt(1).getScore(), equalTo(1.2f))
-        assertThat(hits.getAt(2).getId(), equalTo("1"))
-        assertThat(hits.getAt(2).getScore(), equalTo(1.1f))
-        assertThat(hits.getAt(3).getId(), equalTo("4"))
-        assertThat(hits.getAt(3).getScore(), equalTo(0.0f))
+        val hits = response.hits
+        assertThat(hits.hits.size, equalTo(4))
+        assertThat(hits.getAt(0).id, equalTo("3"))
+        assertThat(hits.getAt(0).score, equalTo(1.3f))
+        assertThat(hits.getAt(1).id, equalTo("2"))
+        assertThat(hits.getAt(1).score, equalTo(1.2f))
+        assertThat(hits.getAt(2).id, equalTo("1"))
+        assertThat(hits.getAt(2).score, equalTo(1.1f))
+        assertThat(hits.getAt(3).id, equalTo("4"))
+        assertThat(hits.getAt(3).score, equalTo(0.0f))
     }
 
     private fun copyTestResources(extFileService: ExternalFileService) {
