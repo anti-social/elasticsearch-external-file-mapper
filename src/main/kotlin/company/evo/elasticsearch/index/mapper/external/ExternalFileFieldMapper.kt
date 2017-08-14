@@ -50,6 +50,7 @@ import org.elasticsearch.search.MultiValueMode
 import org.elasticsearch.index.mapper.TypeParsers.parseField
 
 import company.evo.elasticsearch.indices.ExternalFileService
+import org.elasticsearch.cluster.metadata.IndexMetaData
 
 
 class ExternalFileFieldMapper(
@@ -126,6 +127,7 @@ class ExternalFileFieldMapper(
                     if (extFileService == null) {
                         throw IllegalArgumentException("Missing external file service")
                     }
+//                    extFileService.addField(indexSettings.index, name(), 60)
                     val values = extFileService.getValues(indexSettings.getIndex(), name())
                     return ExternalFileFieldData(
                             name(), indexSettings.getIndex(), keyFieldData, values)
@@ -300,6 +302,17 @@ class ExternalFileFieldMapper(
 
         override fun build(context: BuilderContext): ExternalFileFieldMapper {
             setupFieldType(context)
+//            println("INDEX_DATA_PATH_SETTING ->")
+//            println(IndexMetaData.INDEX_DATA_PATH_SETTING.get(context.indexSettings()))
+//            println("SETTING_INDEX_UUID ->")
+//            println(context.indexSettings().get(IndexMetaData.SETTING_INDEX_UUID))
+//            println("SETTING_INDEX_PROVIDED_NAME ->")
+//            println(context.indexSettings().get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME))
+            val indexName = context.indexSettings()
+                    .get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
+            val indexUuid = context.indexSettings()
+                    .get(IndexMetaData.SETTING_INDEX_UUID)
+            extFileService.addField(Index(indexName, indexUuid), name, 60)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
                     multiFieldsBuilder.build(this, context), copyTo)

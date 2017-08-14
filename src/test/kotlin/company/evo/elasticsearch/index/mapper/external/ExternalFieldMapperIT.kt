@@ -19,6 +19,8 @@ package company.evo.elasticsearch.index.mapper.external
 import java.nio.file.Files
 import java.util.Collections
 
+import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
+
 // import org.apache.lucene.util.LuceneTestCase
 
 import org.elasticsearch.client.Requests.searchRequest
@@ -41,6 +43,7 @@ import company.evo.elasticsearch.plugin.mapper.ExternalMapperPlugin
 
 @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.TEST, numDataNodes=0)
 @ESIntegTestCase.SuppressLocalMode
+@ThreadLeakScope(ThreadLeakScope.Scope.NONE)
 class ExternalFieldMapperIT : ESIntegTestCase() {
 
     override fun nodePlugins(): Collection<Class<out Plugin>> {
@@ -139,6 +142,8 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         assertThat(hits.getAt(2).score, equalTo(1.1f))
         assertThat(hits.getAt(3).id, equalTo("4"))
         assertThat(hits.getAt(3).score, equalTo(0.0f))
+
+//        extFileService.stopScheduler()
     }
 
     private fun copyTestResources(extFileService: ExternalFileService) {
