@@ -1,5 +1,6 @@
 _default:
   gradle-home: &gradle-home /work/.gradle
+  plugin-path: &plugin-path /work/build/distributions/external-field-mapper-0.0.1-SNAPSHOT.zip
   cmd-opts: &cmd-opts
     container: kotlin-sdk
     user-id: 1
@@ -26,11 +27,32 @@ containers:
     - !Sh ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle
     - !EnsureDir /opt/kotlinc
     - !Unzip
-      url: https://github.com/JetBrains/kotlin/releases/download/v1.1.3-2/kotlin-compiler-1.1.3-2.zip
-      sha256: 42abf39538e0ea5960b98e314191b40570090789431e2eac17dd54ebd8b74406
+      url: https://github.com/JetBrains/kotlin/releases/download/v1.1.4/kotlin-compiler-1.1.4.zip
+      sha256: 53b25b6310bed62865cbc5f7b87866a53577d0430df2e995783256bfcba05d91
       subdir: kotlinc
       path: /opt/kotlinc
     - !Sh ln -s /opt/kotlinc/bin/kotlinc /usr/local/bin/kotlinc
+
+  elastic:
+    setup:
+    - !Ubuntu xenial
+    - !Install [ca-certificates]
+    - !AptTrust
+      server: pgp.mit.edu
+      keys: [D88E42B4]
+    - !UbuntuRepo
+      url: https://artifacts.elastic.co/packages/5.x/apt
+      suite: stable
+      components: [main]
+    - !Env
+      ES_SKIP_SET_KERNEL_PARAMETERS: true
+    - !Install
+      - openjdk-8-jre-headless
+      - elasticsearch=5.5.1
+    - !EnsureDir /var/elasticsearch
+    volumes:
+      /var/elasticsearch: !Persistent { name: elastic }
+    auto-clean: true
 
 commands:
   _mk-gradle-user-home: !Command
@@ -102,3 +124,20 @@ commands:
     <<: *cmd-opts
     description: Runs java virtual machine
     run: [java]
+
+  elastic: !Command
+    description: Run elasticsearch
+    container: elastic
+    user-id: 1
+    external-user-id: 0
+    volumes:
+      /usr/share/elasticsearch/plugins: !Tmpfs
+    environ:
+      PLUGIN_PATH: *plugin-path
+    run: |
+      set -e
+      /usr/share/elasticsearch/bin/elasticsearch-plugin install file:${PLUGIN_PATH}
+      /usr/share/elasticsearch/bin/elasticsearch \
+        -E path.conf=/etc/elasticsearch \
+        -E path.logs=/var/elasticsearch/logs \
+        -E path.data=/var/elasticsearch/data
