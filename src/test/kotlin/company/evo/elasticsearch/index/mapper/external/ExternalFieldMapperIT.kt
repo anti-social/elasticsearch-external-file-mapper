@@ -70,7 +70,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                 .get()
         assertEquals(1, nodesResponse.nodes.size)
 
-        val extFileService = ExternalFileService(Environment(settings))
+        val extFileService = ExternalFileService(Environment(settings), 0)
         copyTestResources(extFileService)
 
         val indexName = "test"
@@ -142,16 +142,13 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         assertThat(hits.getAt(2).score, equalTo(1.1f))
         assertThat(hits.getAt(3).id, equalTo("4"))
         assertThat(hits.getAt(3).score, equalTo(0.0f))
-
-//        extFileService.stopScheduler()
     }
 
     private fun copyTestResources(extFileService: ExternalFileService) {
-        val indexPath = extFileService.getIndexDir("test")
-        Files.createDirectories(indexPath)
+        val extFilePath = extFileService.getExternalFilePath("test", "ext_price")
+        Files.createDirectories(extFilePath.parent)
         val resourcePath = getDataPath("/indices")
         Files.newInputStream(resourcePath.resolve("ext_price.txt")).use {
-            val extFilePath = indexPath.resolve("ext_price.txt")
             logger.warn(">>> Copied external file to: $extFilePath")
             Files.copy(it, extFilePath)
         }

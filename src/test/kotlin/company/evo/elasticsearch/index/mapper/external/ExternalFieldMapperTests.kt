@@ -20,6 +20,8 @@ import java.nio.file.Files
 import java.util.Arrays
 import java.util.Collections
 
+import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
+
 import org.elasticsearch.common.compress.CompressedXContent
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.XContentFactory
@@ -38,8 +40,11 @@ import org.hamcrest.Matchers.containsString
 import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
+import java.io.PrintWriter
+import java.nio.file.StandardOpenOption
 
 
+@ThreadLeakScope(ThreadLeakScope.Scope.NONE)
 class ExternalFieldMapperTests : ESSingleNodeTestCase() {
 
     lateinit var indexService: IndexService
@@ -53,7 +58,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 .put(Environment.PATH_HOME_SETTING.getKey(), createTempDir())
                 .build()
         val env = Environment(nodeSettings)
-        this.extFileService = ExternalFileService(env)
+        this.extFileService = ExternalFileService(env, 0)
         this.mapperRegistry = MapperRegistry(
             Collections.singletonMap(
                 ExternalFileFieldMapper.CONTENT_TYPE,
@@ -63,7 +68,9 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
             indexService.getIndexSettings(), indexService.mapperService(),
             indexService.getIndexAnalyzers(), indexService.xContentRegistry(),
             indexService.similarityService(), mapperRegistry,
-            { indexService.newQueryShardContext(0, null, { throw UnsupportedOperationException() }) })
+            { indexService.newQueryShardContext(
+                    0, null,
+                    { throw UnsupportedOperationException() }) })
     }
 
     override fun getPlugins(): Collection<Class<out Plugin>> {
@@ -121,20 +128,34 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
 
     fun testExternalFileService() {
         copyTestResources()
-        val values = extFileService.getValues("test", "ext_price")
+        extFileService.tryLoad("test", "ext_price")
+        var values = extFileService.getValues("test", "ext_price")
         assertEquals(3, values.size)
         assertEquals(1.1, values.get("1"))
         assertEquals(1.2, values.get("2"))
         assertEquals(1.3, values.get("3"))
         assertEquals(null, values.get("4"))
+
+        val extFilePath = extFileService.getExternalFilePath("test", "ext_price")
+        Files.newBufferedWriter(extFilePath, StandardOpenOption.APPEND).use {
+            val out = PrintWriter(it)
+            out.println("4=1.4")
+        }
+        extFileService.tryLoad("test", "ext_price")
+
+        values = extFileService.getValues("test", "ext_price")
+        assertEquals(4, values.size)
+        assertEquals(1.1, values.get("1"))
+        assertEquals(1.2, values.get("2"))
+        assertEquals(1.3, values.get("3"))
+        assertEquals(1.4, values.get("4"))
     }
 
     private fun copyTestResources() {
-        val indexPath = extFileService.getIndexDir("test")
-        Files.createDirectories(indexPath)
+        val extFilePath = extFileService.getExternalFilePath("test", "ext_price")
+        Files.createDirectories(extFilePath.parent)
         val resourcePath = getDataPath("/indices")
         Files.newInputStream(resourcePath.resolve("ext_price.txt")).use {
-            val extFilePath = indexPath.resolve("ext_price.txt")
             Files.copy(it, extFilePath)
         }
     }
