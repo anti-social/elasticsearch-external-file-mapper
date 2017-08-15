@@ -40,6 +40,7 @@ import org.hamcrest.Matchers.containsString
 import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
+import org.junit.Assert
 import java.io.PrintWriter
 import java.nio.file.StandardOpenOption
 
@@ -65,8 +66,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 ExternalFileFieldMapper.TypeParser(extFileService) as TypeParser),
             Collections.emptyMap())
         this.parser = DocumentMapperParser(
-            indexService.getIndexSettings(), indexService.mapperService(),
-            indexService.getIndexAnalyzers(), indexService.xContentRegistry(),
+            indexService.indexSettings, indexService.mapperService(),
+            indexService.indexAnalyzers, indexService.xContentRegistry(),
             indexService.similarityService(), mapperRegistry,
             { indexService.newQueryShardContext(
                     0, null,
@@ -90,6 +91,23 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         val fields = parsedDoc.rootDoc().getFields("ext_field")
         assertNotNull(fields)
         assertEquals(Arrays.toString(fields), 0, fields.size)
+    }
+
+    fun testUpdateInterval() {
+        val mapping = XContentFactory.jsonBuilder()
+                .startObject().startObject("type")
+                    .startObject("properties").startObject("ext_field")
+                        .field("type", "external_file")
+                        .field("update_interval", 60)
+                    .endObject().endObject()
+                .endObject().endObject().string()
+        val mapper = parser.parse("type", CompressedXContent(mapping))
+        val parsedDoc = mapper.parse("test", "type", "1",
+                XContentFactory.jsonBuilder().startObject().field("ext_field", "value").endObject().bytes())
+        val fields = parsedDoc.rootDoc().getFields("ext_field")
+        assertNotNull(fields)
+        assertEquals(Arrays.toString(fields), 0, fields.size)
+        assertEquals(60L, extFileService.getUpdateInterval(indexService.index(), "ext_field"))
     }
 
     fun testDocValuesNotAllowed() {

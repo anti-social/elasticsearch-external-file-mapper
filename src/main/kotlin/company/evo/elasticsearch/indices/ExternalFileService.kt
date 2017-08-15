@@ -83,6 +83,12 @@ class ExternalFileService {
         this.tasks.put(key, task)
     }
 
+    @Synchronized
+    fun getUpdateInterval(index: Index, fieldName: String): Long? {
+        val key = FileKey(index.name, fieldName)
+        return this.tasks[key]?.updateInterval
+    }
+
     fun getValues(index: Index, fieldName: String): Map<String, Double> {
         return getValues(index.getName(), fieldName)
     }

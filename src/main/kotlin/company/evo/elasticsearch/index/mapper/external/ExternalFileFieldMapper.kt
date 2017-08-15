@@ -261,20 +261,25 @@ class ExternalFileFieldMapper(
 
         override fun parse(
                 name: String,
-                node: Map<String, Any>,
+                node: MutableMap<String, Any>,
                 parserContext: Mapper.TypeParser.ParserContext): Mapper.Builder<*,*>
         {
             val builder = Builder(name, extFileService)
             val entries = node.entries.iterator()
-            for (entry in entries) {
-                when (entry.key) {
+            for ((key, value) in entries) {
+                when (key) {
                     "type" -> {}
                     "key_field" -> {
-                        builder.keyField(entry.value.toString())
+                        builder.keyField(value.toString())
+                        entries.remove()
+                    }
+                    "update_interval" -> {
+                        builder.updateInterval(value.toString().toLong())
+                        entries.remove()
                     }
                     else -> {
                         throw MapperParsingException(
-                            "Setting [${entry.key}] cannot be modified for field [$name]")
+                            "Setting [${key}] cannot be modified for field [$name]")
                     }
                 }
             }
@@ -285,6 +290,7 @@ class ExternalFileFieldMapper(
     class Builder : FieldMapper.Builder<Builder, ExternalFileFieldMapper> {
 
         private val extFileService: ExternalFileService
+        private var updateInterval: Long? = null
 
         constructor(
                 name: String,
@@ -305,7 +311,9 @@ class ExternalFileFieldMapper(
                     .get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
             val indexUuid = context.indexSettings()
                     .get(IndexMetaData.SETTING_INDEX_UUID)
-            extFileService.addField(Index(indexName, indexUuid), name, DEFAULT_UPDATE_INTERVAL)
+            extFileService.addField(
+                    Index(indexName, indexUuid), name,
+                    this.updateInterval ?: DEFAULT_UPDATE_INTERVAL)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
                     multiFieldsBuilder.build(this, context), copyTo)
@@ -322,6 +330,11 @@ class ExternalFileFieldMapper(
 
         fun keyField(keyFieldName: String): Builder {
             fieldType().setKeyFieldName(keyFieldName)
+            return this
+        }
+
+        fun updateInterval(interval: Long): Builder {
+            this.updateInterval = interval
             return this
         }
     }
