@@ -19,6 +19,7 @@ package company.evo.elasticsearch.indices
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.FileTime
 import java.util.concurrent.Executors
 import java.util.concurrent.ConcurrentHashMap
@@ -26,27 +27,33 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
+import org.apache.http.client.methods.HttpGet
+import org.apache.http.impl.client.HttpClients
+
 import org.apache.logging.log4j.Logger
 
 import org.elasticsearch.common.logging.Loggers
-import org.elasticsearch.env.Environment
 import org.elasticsearch.index.Index
-import org.joda.time.base.AbstractInterval
 
 
 class ExternalFileService {
-    private val env: Environment
+    private val dataDir: Path
     private val values: MutableMap<FileKey, FileValue> = ConcurrentHashMap()
     private val tasks: MutableMap<FileKey, Task> = HashMap()
     private val logger: Logger = Loggers.getLogger(ExternalFileService::class.java)
     private val scheduler: ScheduledExecutorService
 
-    constructor(env: Environment) : this(env, 1)
+    constructor(dataDir: Path) : this(dataDir, 1)
 
-    constructor(env: Environment, schedulerPoolSize: Int) {
-        this.env = env
+    constructor(dataDir: Path, schedulerPoolSize: Int) {
+        this.dataDir = dataDir
         this.scheduler = Executors.newScheduledThreadPool(schedulerPoolSize)
     }
+
+    private data class FieldSettings(
+            val updateInterval: Long,
+            val url: String?
+    )
 
     private data class FileKey(
             val indexName: String,
@@ -64,7 +71,7 @@ class ExternalFileService {
     )
 
     @Synchronized
-    fun addField(index: Index, fieldName: String, updateInterval: Long) {
+    fun addField(index: Index, fieldName: String, updateInterval: Long, url: String?) {
         val key = FileKey(index.name, fieldName)
         val existingTask = this.tasks[key]
         if (existingTask == null) {
@@ -76,7 +83,12 @@ class ExternalFileService {
         }
         val task = this.tasks.getOrPut(key) {
             val future = scheduler.scheduleAtFixedRate(
-                    { tryLoad(index.name, fieldName) },
+                    {
+                        if (url != null) {
+                            download(index.name, fieldName, url)
+                        }
+                        tryLoad(index.name, fieldName)
+                    },
                     updateInterval, updateInterval, TimeUnit.SECONDS)
             Task(future, updateInterval)
         }
@@ -84,7 +96,7 @@ class ExternalFileService {
     }
 
     @Synchronized
-    fun getUpdateInterval(index: Index, fieldName: String): Long? {
+    internal fun getUpdateInterval(index: Index, fieldName: String): Long? {
         val key = FileKey(index.name, fieldName)
         return this.tasks[key]?.updateInterval
     }
@@ -98,12 +110,21 @@ class ExternalFileService {
         return this.values.get(key)?.values.orEmpty()
     }
 
-    fun getExternalFilePath(indexName: String, fieldName: String): Path {
+    internal fun getExternalFileDir(indexName: String): Path {
         // TODO check and make it right
-        return env.dataFiles()[0]
+        return dataDir
                 .resolve("external_files")
                 .resolve(indexName)
+    }
+
+    internal fun getExternalFilePath(indexName: String, fieldName: String): Path {
+        return getExternalFileDir(indexName)
                 .resolve(fieldName + ".txt")
+    }
+
+    internal fun getVersionFilePath(indexName: String, fieldName: String): Path {
+        return getExternalFileDir(indexName)
+                .resolve(fieldName + ".ver")
     }
 
     fun tryLoad(indexName: String, fieldName: String) {
@@ -119,8 +140,70 @@ class ExternalFileService {
                         "for [${key.fieldName}] field of [${key.indexName}] index " +
                         "from file [${extFilePath}]")
             }
+        } catch (e: NoSuchFileException) {
         } catch (e: IOException) {
-            logger.warn("Cannot read file: " + e.message)
+            logger.warn("Cannot read file [$extFilePath]: $e")
+        }
+    }
+
+    internal fun download(indexName: String, fieldName: String, url: String): Boolean {
+        val client = HttpClients.createDefault()
+        val httpGet = HttpGet(url)
+        val ver = getCurrentVersion(indexName, fieldName)
+        if (ver != null) {
+            httpGet.addHeader("If-Modified-Since", ver)
+        }
+        val resp = client.execute(httpGet)
+        resp.use {
+            when (resp.statusLine.statusCode) {
+                304 -> return false
+                200 -> {
+                    val lastModified = resp.getLastHeader("Last-Modified").value
+                    if (resp.entity == null) {
+                        logger.warn("Missing content when downloading [$url]")
+                        return false
+                    }
+                    Files.createDirectories(getExternalFileDir(indexName))
+                    val tmpPath = Files.createTempFile(
+                            getExternalFileDir(indexName), fieldName, null)
+                    resp.entity?.content?.use { inStream ->
+                        Files.copy(inStream, tmpPath, StandardCopyOption.REPLACE_EXISTING)
+                        tmpPath.toFile().renameTo(
+                                getExternalFilePath(indexName, fieldName).toFile())
+                    }
+                    updateVersion(indexName, fieldName, lastModified)
+                    return true
+                }
+                else -> {
+                    logger.warn("Failed to download [$url] with status: ${resp.statusLine}")
+                    return false
+                }
+            }
+        }
+    }
+
+    internal fun getCurrentVersion(indexName: String, fieldName: String): String? {
+        val versionPath = getVersionFilePath(indexName, fieldName)
+        try {
+            Files.newBufferedReader(versionPath).use {
+                return it.readLine()
+            }
+        } catch (e: NoSuchFileException) {
+            return null
+        } catch (e: IOException) {
+            logger.warn("Cannot read file [$versionPath]: $e")
+            return null
+        }
+    }
+
+    internal fun updateVersion(indexName: String, fieldName: String, ver: String) {
+        val versionPath = getVersionFilePath(indexName, fieldName)
+        try {
+            Files.newBufferedWriter(versionPath).use {
+                it.write(ver)
+            }
+        } catch (e: IOException) {
+            logger.warn("Cannot write file [$versionPath]: $e")
         }
     }
 

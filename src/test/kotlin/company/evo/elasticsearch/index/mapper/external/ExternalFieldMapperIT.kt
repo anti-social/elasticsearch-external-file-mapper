@@ -21,8 +21,6 @@ import java.util.Collections
 
 import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
 
-// import org.apache.lucene.util.LuceneTestCase
-
 import org.elasticsearch.client.Requests.searchRequest
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder
@@ -70,7 +68,8 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                 .get()
         assertEquals(1, nodesResponse.nodes.size)
 
-        val extFileService = ExternalFileService(Environment(settings), 0)
+        val env = Environment(settings)
+        val extFileService = ExternalFileService(env.dataFiles()[0], 0)
         copyTestResources(extFileService)
 
         val indexName = "test"

@@ -29,4 +29,10 @@ repositories {
 
 dependencies {
     compile "org.jetbrains.kotlin:kotlin-stdlib"
+    compile "org.apache.httpcomponents:httpcore:${versions.httpcore}"
+    compile "org.apache.httpcomponents:httpclient:${versions.httpclient}"
+}
+
+task testFunc(type: Test) {
+    include '**/*TestCase.class'
 }

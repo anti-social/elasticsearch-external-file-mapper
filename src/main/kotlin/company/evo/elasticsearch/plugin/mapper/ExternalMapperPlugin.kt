@@ -35,7 +35,7 @@ class ExternalMapperPlugin : Plugin, MapperPlugin {
 
     constructor(settings: Settings) {
         val env = Environment(settings)
-        this.extFileService = ExternalFileService(env)
+        this.extFileService = ExternalFileService(env.dataFiles()[0])
     }
 
     override fun getMappers(): Map<String, Mapper.TypeParser> {

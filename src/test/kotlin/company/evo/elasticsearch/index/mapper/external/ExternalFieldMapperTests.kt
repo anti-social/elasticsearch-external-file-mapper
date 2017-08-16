@@ -59,7 +59,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 .put(Environment.PATH_HOME_SETTING.getKey(), createTempDir())
                 .build()
         val env = Environment(nodeSettings)
-        this.extFileService = ExternalFileService(env, 0)
+        this.extFileService = ExternalFileService(env.dataFiles()[0], 0)
         this.mapperRegistry = MapperRegistry(
             Collections.singletonMap(
                 ExternalFileFieldMapper.CONTENT_TYPE,

@@ -277,6 +277,9 @@ class ExternalFileFieldMapper(
                         builder.updateInterval(value.toString().toLong())
                         entries.remove()
                     }
+                    "url" -> {
+                        builder.url(value.toString())
+                    }
                     else -> {
                         throw MapperParsingException(
                             "Setting [${key}] cannot be modified for field [$name]")
@@ -291,6 +294,7 @@ class ExternalFileFieldMapper(
 
         private val extFileService: ExternalFileService
         private var updateInterval: Long? = null
+        private var url: String? = null
 
         constructor(
                 name: String,
@@ -313,7 +317,8 @@ class ExternalFileFieldMapper(
                     .get(IndexMetaData.SETTING_INDEX_UUID)
             extFileService.addField(
                     Index(indexName, indexUuid), name,
-                    this.updateInterval ?: DEFAULT_UPDATE_INTERVAL)
+                    this.updateInterval ?: DEFAULT_UPDATE_INTERVAL,
+                    url)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
                     multiFieldsBuilder.build(this, context), copyTo)
@@ -335,6 +340,11 @@ class ExternalFileFieldMapper(
 
         fun updateInterval(interval: Long): Builder {
             this.updateInterval = interval
+            return this
+        }
+
+        fun url(url: String): Builder {
+            this.url = url
             return this
         }
     }
