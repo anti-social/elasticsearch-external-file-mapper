@@ -18,24 +18,16 @@ package company.evo.elasticsearch.plugin.mapper
 
 import java.util.Collections
 
-import org.elasticsearch.client.Client
-import org.elasticsearch.cluster.service.ClusterService
-import org.elasticsearch.common.settings.Settings
-import org.elasticsearch.common.xcontent.NamedXContentRegistry
-import org.elasticsearch.env.Environment
-import org.elasticsearch.env.NodeEnvironment
 import org.elasticsearch.index.mapper.Mapper
 import org.elasticsearch.plugins.MapperPlugin
 import org.elasticsearch.plugins.Plugin
-import org.elasticsearch.script.ScriptService
-import org.elasticsearch.threadpool.ThreadPool
-import org.elasticsearch.watcher.ResourceWatcherService
 
 import company.evo.elasticsearch.index.mapper.external.ExternalFileFieldMapper
 import company.evo.elasticsearch.indices.ExternalFileService
+import org.elasticsearch.common.component.LifecycleComponent
 
 
-class ExternalMapperPlugin(private val settings: Settings) : Plugin(), MapperPlugin {
+class ExternalMapperPlugin : Plugin(), MapperPlugin {
 
     override fun getMappers(): Map<String, Mapper.TypeParser> {
         return Collections.singletonMap(
@@ -43,17 +35,9 @@ class ExternalMapperPlugin(private val settings: Settings) : Plugin(), MapperPlu
                 ExternalFileFieldMapper.TypeParser())
     }
 
-    override fun createComponents(
-            client: Client,
-            clusterService: ClusterService,
-            threadPool: ThreadPool,
-            resourceWatcherService: ResourceWatcherService,
-            scriptService: ScriptService,
-            xContentRegistry: NamedXContentRegistry
-    ): Collection<Any> {
-        val env = Environment(settings)
-        // FIXME We need NodeEnvironment instance to get node data path
-        val nodeDir = NodeEnvironment.resolveNodePath(env.dataFiles()[0], 0)
-        return listOf(ExternalFileService(settings, nodeDir, threadPool))
+    // TODO Use createComponents method when updating Elasticsearch to 6.0
+    // we need NodeEnvironment instance to get node data paths
+    override fun getGuiceServiceClasses(): Collection<Class<out LifecycleComponent>> {
+        return Collections.singleton(ExternalFileService::class.java)
     }
 }

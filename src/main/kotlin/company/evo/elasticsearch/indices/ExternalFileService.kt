@@ -26,11 +26,10 @@ import java.util.concurrent.ConcurrentHashMap
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.impl.client.HttpClients
 
-import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.component.AbstractLifecycleComponent
+import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
-import org.elasticsearch.env.Environment
 import org.elasticsearch.env.NodeEnvironment
 import org.elasticsearch.index.Index
 import org.elasticsearch.threadpool.ThreadPool
@@ -68,8 +67,12 @@ class ExternalFileService : AbstractLifecycleComponent {
             val updateInterval: Long
     )
 
-    constructor(settings: Settings, nodeDir: Path, threadPool: ThreadPool) : super(settings) {
-        this.nodeDir = nodeDir
+    @Inject
+    constructor(
+            settings: Settings,
+            threadPool: ThreadPool,
+            nodeEnv: NodeEnvironment) : super(settings) {
+        this.nodeDir = nodeEnv.nodeDataPaths()[0]
         this.threadPool = threadPool
     }
 

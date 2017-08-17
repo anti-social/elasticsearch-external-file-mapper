@@ -55,7 +55,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 .put(Environment.PATH_HOME_SETTING.key, createTempDir())
                 .build()
         this.extFileService = ExternalFileService(
-                nodeSettings, createTempDir(), indexService.threadPool)
+                nodeSettings, indexService.threadPool, node().nodeEnvironment)
         this.extFileService.doStart()
         this.mapperRegistry = MapperRegistry(
             Collections.singletonMap(
