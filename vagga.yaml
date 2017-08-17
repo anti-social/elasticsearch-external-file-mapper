@@ -107,7 +107,7 @@ commands:
   integ-test: !Command
     <<: *cmd-opts
     description: Runs integration tests
-    run: [gradle, integTest]
+    run: [gradle, integTest, -Dtests.class=*.ExternalFieldMapperIT]
 
   clean: !Command
     <<: *cmd-opts

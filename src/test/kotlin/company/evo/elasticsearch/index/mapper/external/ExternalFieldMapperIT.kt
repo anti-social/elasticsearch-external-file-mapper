@@ -19,8 +19,6 @@ package company.evo.elasticsearch.index.mapper.external
 import java.nio.file.Files
 import java.util.Collections
 
-import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
-
 import org.elasticsearch.client.Requests.searchRequest
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder
@@ -35,13 +33,12 @@ import org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertNoFailures
 
 import org.hamcrest.Matchers.equalTo
 
-import company.evo.elasticsearch.indices.ExternalFileService
 import company.evo.elasticsearch.plugin.mapper.ExternalMapperPlugin
+import java.nio.file.Path
 
 
 @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.TEST, numDataNodes=0)
 @ESIntegTestCase.SuppressLocalMode
-@ThreadLeakScope(ThreadLeakScope.Scope.NONE)
 class ExternalFieldMapperIT : ESIntegTestCase() {
 
     override fun nodePlugins(): Collection<Class<out Plugin>> {
@@ -68,11 +65,9 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                 .get()
         assertEquals(1, nodesResponse.nodes.size)
 
-        val env = Environment(settings)
-        val extFileService = ExternalFileService(env.dataFiles()[0], 0)
-        copyTestResources(extFileService)
-
         val indexName = "test"
+        copyTestResources(nodePaths[0], indexName)
+
         client().admin()
                 .indices()
                 .prepareCreate(indexName)
@@ -143,8 +138,11 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         assertThat(hits.getAt(3).score, equalTo(0.0f))
     }
 
-    private fun copyTestResources(extFileService: ExternalFileService) {
-        val extFilePath = extFileService.getExternalFilePath("test", "ext_price")
+    private fun copyTestResources(nodeDir: Path, indexName: String) {
+        val extFilePath = nodeDir
+                .resolve("external_files")
+                .resolve(indexName)
+                .resolve("ext_price.txt")
         Files.createDirectories(extFilePath.parent)
         val resourcePath = getDataPath("/indices")
         Files.newInputStream(resourcePath.resolve("ext_price.txt")).use {

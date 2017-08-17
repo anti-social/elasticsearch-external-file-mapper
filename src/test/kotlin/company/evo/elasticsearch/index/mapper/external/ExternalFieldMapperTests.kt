@@ -20,8 +20,6 @@ import java.nio.file.Files
 import java.util.Arrays
 import java.util.Collections
 
-import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
-
 import org.elasticsearch.common.compress.CompressedXContent
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.XContentFactory
@@ -40,12 +38,10 @@ import org.hamcrest.Matchers.containsString
 import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
-import org.junit.Assert
 import java.io.PrintWriter
 import java.nio.file.StandardOpenOption
 
 
-@ThreadLeakScope(ThreadLeakScope.Scope.NONE)
 class ExternalFieldMapperTests : ESSingleNodeTestCase() {
 
     lateinit var indexService: IndexService
@@ -56,14 +52,15 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
     @Before fun setup() {
         this.indexService = this.createIndex("test")
         val nodeSettings = Settings.builder()
-                .put(Environment.PATH_HOME_SETTING.getKey(), createTempDir())
+                .put(Environment.PATH_HOME_SETTING.key, createTempDir())
                 .build()
-        val env = Environment(nodeSettings)
-        this.extFileService = ExternalFileService(env.dataFiles()[0], 0)
+        this.extFileService = ExternalFileService(
+                nodeSettings, createTempDir(), indexService.threadPool)
+        this.extFileService.doStart()
         this.mapperRegistry = MapperRegistry(
             Collections.singletonMap(
                 ExternalFileFieldMapper.CONTENT_TYPE,
-                ExternalFileFieldMapper.TypeParser(extFileService) as TypeParser),
+                ExternalFileFieldMapper.TypeParser() as TypeParser),
             Collections.emptyMap())
         this.parser = DocumentMapperParser(
             indexService.indexSettings, indexService.mapperService(),

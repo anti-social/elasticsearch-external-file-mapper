@@ -255,16 +255,14 @@ class ExternalFileFieldMapper(
         override fun clear() {}
     }
 
-    class TypeParser(
-            private val extFileService: ExternalFileService
-    ) : Mapper.TypeParser {
+    class TypeParser : Mapper.TypeParser {
 
         override fun parse(
                 name: String,
                 node: MutableMap<String, Any>,
                 parserContext: Mapper.TypeParser.ParserContext): Mapper.Builder<*,*>
         {
-            val builder = Builder(name, extFileService)
+            val builder = Builder(name, ExternalFileService.instance)
             val entries = node.entries.iterator()
             for ((key, value) in entries) {
                 when (key) {

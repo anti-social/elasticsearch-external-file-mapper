@@ -16,31 +16,44 @@
 
 package company.evo.elasticsearch.plugin.mapper
 
-import java.nio.file.Path
 import java.util.Collections
 
+import org.elasticsearch.client.Client
+import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.common.xcontent.NamedXContentRegistry
 import org.elasticsearch.env.Environment
+import org.elasticsearch.env.NodeEnvironment
 import org.elasticsearch.index.mapper.Mapper
 import org.elasticsearch.plugins.MapperPlugin
 import org.elasticsearch.plugins.Plugin
+import org.elasticsearch.script.ScriptService
+import org.elasticsearch.threadpool.ThreadPool
+import org.elasticsearch.watcher.ResourceWatcherService
 
 import company.evo.elasticsearch.index.mapper.external.ExternalFileFieldMapper
 import company.evo.elasticsearch.indices.ExternalFileService
 
 
-class ExternalMapperPlugin : Plugin, MapperPlugin {
-
-    private val extFileService: ExternalFileService
-
-    constructor(settings: Settings) {
-        val env = Environment(settings)
-        this.extFileService = ExternalFileService(env.dataFiles()[0])
-    }
+class ExternalMapperPlugin(private val settings: Settings) : Plugin(), MapperPlugin {
 
     override fun getMappers(): Map<String, Mapper.TypeParser> {
         return Collections.singletonMap(
                 ExternalFileFieldMapper.CONTENT_TYPE,
-                ExternalFileFieldMapper.TypeParser(extFileService))
+                ExternalFileFieldMapper.TypeParser())
+    }
+
+    override fun createComponents(
+            client: Client,
+            clusterService: ClusterService,
+            threadPool: ThreadPool,
+            resourceWatcherService: ResourceWatcherService,
+            scriptService: ScriptService,
+            xContentRegistry: NamedXContentRegistry
+    ): Collection<Any> {
+        val env = Environment(settings)
+        // FIXME We need NodeEnvironment instance to get node data path
+        val nodeDir = NodeEnvironment.resolveNodePath(env.dataFiles()[0], 0)
+        return listOf(ExternalFileService(settings, nodeDir, threadPool))
     }
 }

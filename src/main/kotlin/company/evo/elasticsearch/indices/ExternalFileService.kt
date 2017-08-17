@@ -21,33 +21,31 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.FileTime
-import java.util.concurrent.Executors
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
 
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.impl.client.HttpClients
 
-import org.apache.logging.log4j.Logger
-
-import org.elasticsearch.common.logging.Loggers
+import org.elasticsearch.cluster.service.ClusterService
+import org.elasticsearch.common.component.AbstractLifecycleComponent
+import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.common.unit.TimeValue
+import org.elasticsearch.env.Environment
+import org.elasticsearch.env.NodeEnvironment
 import org.elasticsearch.index.Index
+import org.elasticsearch.threadpool.ThreadPool
 
 
-class ExternalFileService {
-    private val dataDir: Path
+class ExternalFileService : AbstractLifecycleComponent {
+
+    private val nodeDir: Path
+    private val threadPool: ThreadPool
     private val values: MutableMap<FileKey, FileValue> = ConcurrentHashMap()
     private val tasks: MutableMap<FileKey, Task> = HashMap()
-    private val logger: Logger = Loggers.getLogger(ExternalFileService::class.java)
-    private val scheduler: ScheduledExecutorService
 
-    constructor(dataDir: Path) : this(dataDir, 1)
-
-    constructor(dataDir: Path, schedulerPoolSize: Int) {
-        this.dataDir = dataDir
-        this.scheduler = Executors.newScheduledThreadPool(schedulerPoolSize)
+    companion object {
+        lateinit var instance: ExternalFileService
+        var started: Boolean = false
     }
 
     private data class FieldSettings(
@@ -66,9 +64,27 @@ class ExternalFileService {
     )
 
     private data class Task(
-            val future: ScheduledFuture<*>,
+            val future: ThreadPool.Cancellable,
             val updateInterval: Long
     )
+
+    constructor(settings: Settings, nodeDir: Path, threadPool: ThreadPool) : super(settings) {
+        this.nodeDir = nodeDir
+        this.threadPool = threadPool
+    }
+
+    override public fun doStart() {
+        if (started) {
+            throw IllegalStateException("Already started")
+        }
+        instance = this
+    }
+
+    override public fun doStop() {
+        started = false
+    }
+
+    override fun doClose() {}
 
     @Synchronized
     fun addField(index: Index, fieldName: String, updateInterval: Long, url: String?) {
@@ -78,18 +94,19 @@ class ExternalFileService {
             tryLoad(index.name, fieldName)
         }
         if (existingTask != null && existingTask.updateInterval != updateInterval) {
-            existingTask.future.cancel(false)
+            existingTask.future.cancel()
             this.tasks.remove(key)
         }
         val task = this.tasks.getOrPut(key) {
-            val future = scheduler.scheduleAtFixedRate(
+            val future = threadPool.scheduleWithFixedDelay(
                     {
                         if (url != null) {
                             download(index.name, fieldName, url)
                         }
                         tryLoad(index.name, fieldName)
                     },
-                    updateInterval, updateInterval, TimeUnit.SECONDS)
+                    TimeValue.timeValueSeconds(updateInterval),
+                    ThreadPool.Names.SAME)
             Task(future, updateInterval)
         }
         this.tasks.put(key, task)
@@ -111,8 +128,7 @@ class ExternalFileService {
     }
 
     internal fun getExternalFileDir(indexName: String): Path {
-        // TODO check and make it right
-        return dataDir
+        return nodeDir
                 .resolve("external_files")
                 .resolve(indexName)
     }
