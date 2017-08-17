@@ -19,12 +19,7 @@ package company.evo.elasticsearch.indices
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.FileTime
 import java.util.concurrent.ConcurrentHashMap
-
-import org.apache.http.client.methods.HttpGet
-import org.apache.http.impl.client.HttpClients
 
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.inject.Inject
@@ -39,32 +34,17 @@ class ExternalFileService : AbstractLifecycleComponent {
 
     private val nodeDir: Path
     private val threadPool: ThreadPool
-    private val values: MutableMap<FileKey, FileValue> = ConcurrentHashMap()
-    private val tasks: MutableMap<FileKey, Task> = HashMap()
+    private val values: MutableMap<FileKey, FileValue?> = ConcurrentHashMap()
+    private val tasks: MutableMap<FileKey, UpdateTask> = HashMap()
 
     companion object {
         lateinit var instance: ExternalFileService
         var started: Boolean = false
     }
 
-    private data class FieldSettings(
-            val updateInterval: Long,
-            val url: String?
-    )
-
-    private data class FileKey(
-            val indexName: String,
-            val fieldName: String
-    )
-
-    private data class FileValue(
-            val values: Map<String, Double>,
-            val lastModified: FileTime
-    )
-
-    private data class Task(
+    private data class UpdateTask(
             val future: ThreadPool.Cancellable,
-            val updateInterval: Long
+            val settings: FileSettings
     )
 
     @Inject
@@ -91,12 +71,14 @@ class ExternalFileService : AbstractLifecycleComponent {
 
     @Synchronized
     fun addField(index: Index, fieldName: String, updateInterval: Long, url: String?) {
+        val fileSettings = FileSettings(updateInterval, url)
+        val fileUpdater = ExternalFileUpdater(this.nodeDir, index, fieldName, fileSettings)
         val key = FileKey(index.name, fieldName)
-        val existingTask = this.tasks[key]
-        if (existingTask == null) {
-            tryLoad(index.name, fieldName)
+        this.values.computeIfAbsent(key) {
+            fileUpdater.loadValues(null)
         }
-        if (existingTask != null && existingTask.updateInterval != updateInterval) {
+        val existingTask = this.tasks[key]
+        if (existingTask != null && existingTask.settings != fileSettings) {
             existingTask.future.cancel()
             this.tasks.remove(key)
         }
@@ -104,13 +86,15 @@ class ExternalFileService : AbstractLifecycleComponent {
             val future = threadPool.scheduleWithFixedDelay(
                     {
                         if (url != null) {
-                            download(index.name, fieldName, url)
+                            fileUpdater.download()
                         }
-                        tryLoad(index.name, fieldName)
+                        this.values.compute(key) { _, v ->
+                            fileUpdater.loadValues(v?.lastModified)
+                        }
                     },
                     TimeValue.timeValueSeconds(updateInterval),
                     ThreadPool.Names.SAME)
-            Task(future, updateInterval)
+            UpdateTask(future, fileSettings)
         }
         this.tasks.put(key, task)
     }
@@ -118,131 +102,15 @@ class ExternalFileService : AbstractLifecycleComponent {
     @Synchronized
     internal fun getUpdateInterval(index: Index, fieldName: String): Long? {
         val key = FileKey(index.name, fieldName)
-        return this.tasks[key]?.updateInterval
+        return this.tasks[key]?.settings?.updateInterval
     }
 
     fun getValues(index: Index, fieldName: String): Map<String, Double> {
-        return getValues(index.getName(), fieldName)
+        return getValues(index.name, fieldName)
     }
 
     fun getValues(indexName: String, fieldName: String): Map<String, Double> {
         val key = FileKey(indexName, fieldName)
-        return this.values.get(key)?.values.orEmpty()
-    }
-
-    internal fun getExternalFileDir(indexName: String): Path {
-        return nodeDir
-                .resolve("external_files")
-                .resolve(indexName)
-    }
-
-    internal fun getExternalFilePath(indexName: String, fieldName: String): Path {
-        return getExternalFileDir(indexName)
-                .resolve(fieldName + ".txt")
-    }
-
-    internal fun getVersionFilePath(indexName: String, fieldName: String): Path {
-        return getExternalFileDir(indexName)
-                .resolve(fieldName + ".ver")
-    }
-
-    fun tryLoad(indexName: String, fieldName: String) {
-        val key = FileKey(indexName, fieldName)
-        val extFilePath = getExternalFilePath(indexName, fieldName)
-        try {
-            val lastModified = Files.getLastModifiedTime(extFilePath)
-            val fieldValues = this.values[key]
-            if (lastModified > (fieldValues?.lastModified ?: FileTime.fromMillis(0))) {
-                val fValues = parse(extFilePath)
-                this.values.put(key, FileValue(fValues, lastModified))
-                logger.info("Loaded ${fValues.size} values " +
-                        "for [${key.fieldName}] field of [${key.indexName}] index " +
-                        "from file [${extFilePath}]")
-            }
-        } catch (e: NoSuchFileException) {
-        } catch (e: IOException) {
-            logger.warn("Cannot read file [$extFilePath]: $e")
-        }
-    }
-
-    internal fun download(indexName: String, fieldName: String, url: String): Boolean {
-        val client = HttpClients.createDefault()
-        val httpGet = HttpGet(url)
-        val ver = getCurrentVersion(indexName, fieldName)
-        if (ver != null) {
-            httpGet.addHeader("If-Modified-Since", ver)
-        }
-        val resp = client.execute(httpGet)
-        resp.use {
-            when (resp.statusLine.statusCode) {
-                304 -> return false
-                200 -> {
-                    val lastModified = resp.getLastHeader("Last-Modified").value
-                    if (resp.entity == null) {
-                        logger.warn("Missing content when downloading [$url]")
-                        return false
-                    }
-                    Files.createDirectories(getExternalFileDir(indexName))
-                    val tmpPath = Files.createTempFile(
-                            getExternalFileDir(indexName), fieldName, null)
-                    resp.entity?.content?.use { inStream ->
-                        Files.copy(inStream, tmpPath, StandardCopyOption.REPLACE_EXISTING)
-                        tmpPath.toFile().renameTo(
-                                getExternalFilePath(indexName, fieldName).toFile())
-                    }
-                    updateVersion(indexName, fieldName, lastModified)
-                    return true
-                }
-                else -> {
-                    logger.warn("Failed to download [$url] with status: ${resp.statusLine}")
-                    return false
-                }
-            }
-        }
-    }
-
-    internal fun getCurrentVersion(indexName: String, fieldName: String): String? {
-        val versionPath = getVersionFilePath(indexName, fieldName)
-        try {
-            Files.newBufferedReader(versionPath).use {
-                return it.readLine()
-            }
-        } catch (e: NoSuchFileException) {
-            return null
-        } catch (e: IOException) {
-            logger.warn("Cannot read file [$versionPath]: $e")
-            return null
-        }
-    }
-
-    internal fun updateVersion(indexName: String, fieldName: String, ver: String) {
-        val versionPath = getVersionFilePath(indexName, fieldName)
-        try {
-            Files.newBufferedWriter(versionPath).use {
-                it.write(ver)
-            }
-        } catch (e: IOException) {
-            logger.warn("Cannot write file [$versionPath]: $e")
-        }
-    }
-
-    private fun parse(path: Path): Map<String, Double> {
-        val values = HashMap<String, Double>()
-        Files.newBufferedReader(path).use {
-            for (rawLine in it.lines()) {
-                val line = rawLine.trim()
-                if (line == "") {
-                    continue
-                }
-                if (line.startsWith("#")) {
-                    continue
-                }
-                val delimiterIx = line.indexOf('=')
-                val key = line.substring(0, delimiterIx).trim()
-                val value = line.substring(delimiterIx + 1).trim()
-                values[key] = value.toDouble()
-            }
-        }
-        return values
+        return this.values[key]?.values.orEmpty()
     }
 }

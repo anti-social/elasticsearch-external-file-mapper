@@ -140,38 +140,4 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 containsString("Setting [stored] cannot be modified for field [ext_field]"))
         }
     }
-
-    fun testExternalFileService() {
-        copyTestResources()
-        extFileService.tryLoad("test", "ext_price")
-        var values = extFileService.getValues("test", "ext_price")
-        assertEquals(3, values.size)
-        assertEquals(1.1, values.get("1"))
-        assertEquals(1.2, values.get("2"))
-        assertEquals(1.3, values.get("3"))
-        assertEquals(null, values.get("4"))
-
-        val extFilePath = extFileService.getExternalFilePath("test", "ext_price")
-        Files.newBufferedWriter(extFilePath, StandardOpenOption.APPEND).use {
-            val out = PrintWriter(it)
-            out.println("4=1.4")
-        }
-        extFileService.tryLoad("test", "ext_price")
-
-        values = extFileService.getValues("test", "ext_price")
-        assertEquals(4, values.size)
-        assertEquals(1.1, values.get("1"))
-        assertEquals(1.2, values.get("2"))
-        assertEquals(1.3, values.get("3"))
-        assertEquals(1.4, values.get("4"))
-    }
-
-    private fun copyTestResources() {
-        val extFilePath = extFileService.getExternalFilePath("test", "ext_price")
-        Files.createDirectories(extFilePath.parent)
-        val resourcePath = getDataPath("/indices")
-        Files.newInputStream(resourcePath.resolve("ext_price.txt")).use {
-            Files.copy(it, extFilePath)
-        }
-    }
 }

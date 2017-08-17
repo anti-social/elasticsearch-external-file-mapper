@@ -144,7 +144,6 @@ commands:
       web-server: *serve-test-files
       test: !Command
         <<: *cmd-opts
-#        run: gradle test -Dtests.class=*.ExternalFileServiceTestCase
         run: gradle testFunc
 
   elastic: !Command
