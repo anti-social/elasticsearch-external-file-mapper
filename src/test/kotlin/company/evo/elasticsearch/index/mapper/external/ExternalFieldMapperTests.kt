@@ -39,6 +39,7 @@ import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
 import company.evo.elasticsearch.plugin.mapper.ExternalMapperPlugin
+import org.junit.Assert
 import java.io.PrintWriter
 import java.nio.file.StandardOpenOption
 

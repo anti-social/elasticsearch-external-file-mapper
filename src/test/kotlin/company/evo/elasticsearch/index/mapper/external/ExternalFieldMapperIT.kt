@@ -47,7 +47,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
 
     override fun ignoreExternalCluster(): Boolean { return true }
 
-    fun test() {
+    fun testDefaults() {
         val dataPath = createTempDir()
         val homePath = createTempDir()
         val settings = Settings.builder()
@@ -117,7 +117,6 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
 
         val response = client().search(
                 searchRequest()
-                // .searchType(SearchType.QUERY_THEN_FETCH)
                 .source(
                         searchSource()
                         .query(functionScoreQuery(
@@ -135,6 +134,102 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         assertThat(hits.getAt(2).id, equalTo("1"))
         assertThat(hits.getAt(2).score, equalTo(1.1f))
         assertThat(hits.getAt(3).id, equalTo("4"))
+        assertThat(hits.getAt(3).score, equalTo(0.0f))
+    }
+
+    fun testCustomKeyField() {
+        val dataPath = createTempDir()
+        val homePath = createTempDir()
+        val settings = Settings.builder()
+                .put(Environment.PATH_HOME_SETTING.key, homePath)
+                .put(Environment.PATH_DATA_SETTING.key, dataPath)
+                .build()
+        val node = internalCluster().startNode(settings)
+        val nodePaths = internalCluster()
+                .getInstance(NodeEnvironment::class.java, node)
+                .nodeDataPaths()
+        assertEquals(1, nodePaths.size)
+
+        val nodesResponse = client().admin().cluster()
+                .prepareNodesInfo()
+                .get()
+        assertEquals(1, nodesResponse.nodes.size)
+
+        val indexName = "test"
+        copyTestResources(nodePaths[0], indexName)
+
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .addMapping(
+                        "product",
+                        jsonBuilder()
+                                .startObject().startObject("product").startObject("properties")
+                                    .startObject("id")
+                                        .field("type", "long")
+                                    .endObject()
+                                    .startObject("name")
+                                        .field("type", "text")
+                                    .endObject()
+                                    .startObject("ext_price")
+                                        .field("type", "external_file")
+                                        .field("key_field", "id")
+                                    .endObject()
+                                .endObject().endObject().endObject())
+                .get()
+
+        client().prepareIndex("test", "product", "p1")
+                .setSource(
+                        jsonBuilder()
+                                .startObject()
+                                    .field("id", 1)
+                                    .field("name", "Bergamont")
+                                .endObject())
+                .get()
+        client().prepareIndex("test", "product", "p2")
+                .setSource(
+                        jsonBuilder()
+                                .startObject()
+                                    .field("id", 2)
+                                    .field("name", "Specialized")
+                                .endObject())
+                .get()
+        client().prepareIndex("test", "product", "p3")
+                .setSource(
+                        jsonBuilder()
+                                .startObject()
+                                    .field("id", 3)
+                                    .field("name", "Cannondale")
+                                .endObject())
+                .get()
+        client().prepareIndex("test", "product", "p4")
+                .setSource(
+                        jsonBuilder()
+                                .startObject()
+                                    .field("id", 4)
+                                    .field("name", "Honda")
+                                .endObject())
+                .get()
+
+        client().admin().indices().prepareRefresh().get()
+
+        val response = client().search(
+                searchRequest().source(
+                        searchSource().query(
+                                functionScoreQuery(
+                                        fieldValueFactorFunction("ext_price").missing(0.0)))
+                                .explain(false)))
+                .actionGet()
+        assertNoFailures(response)
+        val hits = response.hits
+        assertThat(hits.hits.size, equalTo(4))
+        assertThat(hits.getAt(0).id, equalTo("p3"))
+        assertThat(hits.getAt(0).score, equalTo(1.3f))
+        assertThat(hits.getAt(1).id, equalTo("p2"))
+        assertThat(hits.getAt(1).score, equalTo(1.2f))
+        assertThat(hits.getAt(2).id, equalTo("p1"))
+        assertThat(hits.getAt(2).score, equalTo(1.1f))
+        assertThat(hits.getAt(3).id, equalTo("p4"))
         assertThat(hits.getAt(3).score, equalTo(0.0f))
     }
 

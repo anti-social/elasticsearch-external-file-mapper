@@ -25,14 +25,6 @@ import org.apache.lucene.search.SortField
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.index.Index
 import org.elasticsearch.index.IndexSettings
-import org.elasticsearch.index.fielddata.AtomicFieldData
-import org.elasticsearch.index.fielddata.AtomicNumericFieldData
-import org.elasticsearch.index.fielddata.IndexFieldData
-import org.elasticsearch.index.fielddata.IndexFieldDataCache
-import org.elasticsearch.index.fielddata.IndexNumericFieldData
-import org.elasticsearch.index.fielddata.ScriptDocValues
-import org.elasticsearch.index.fielddata.SortedBinaryDocValues
-import org.elasticsearch.index.fielddata.SortedNumericDoubleValues
 import org.elasticsearch.index.mapper.FieldMapper
 import org.elasticsearch.index.mapper.IdFieldMapper
 import org.elasticsearch.index.mapper.MappedFieldType
@@ -50,7 +42,13 @@ import org.elasticsearch.search.MultiValueMode
 import org.elasticsearch.index.mapper.TypeParsers.parseField
 
 import company.evo.elasticsearch.indices.ExternalFileService
+import org.apache.lucene.document.NumericDocValuesField
 import org.elasticsearch.cluster.metadata.IndexMetaData
+import org.elasticsearch.common.xcontent.ToXContent
+import org.elasticsearch.common.xcontent.XContentBuilder
+import org.elasticsearch.index.fielddata.*
+import org.elasticsearch.index.fielddata.plain.PagedBytesIndexFieldData
+import java.util.*
 
 
 class ExternalFileFieldMapper(
@@ -71,6 +69,8 @@ class ExternalFileFieldMapper(
         val FIELD_TYPE = ExternalFileFieldType()
 
         init {
+            FIELD_TYPE.setIndexOptions(IndexOptions.NONE)
+            FIELD_TYPE.setHasDocValues(false)
             FIELD_TYPE.freeze()
         }
     }
@@ -79,17 +79,122 @@ class ExternalFileFieldMapper(
         return CONTENT_TYPE
     }
 
+    override fun fieldType(): ExternalFileFieldType {
+        return super.fieldType() as ExternalFileFieldType
+    }
+
     override fun parseCreateField(context: ParseContext, fields: List<IndexableField>) {}
+
+    override fun doXContentBody(builder: XContentBuilder, includeDefaults: Boolean, params: ToXContent.Params) {
+        super.doXContentBody(builder, includeDefaults, params)
+        if (includeDefaults || fieldType().keyFieldName() != null) {
+            builder.field("key_field", fieldType().keyFieldName())
+        }
+    }
+
+    class TypeParser : Mapper.TypeParser {
+        override fun parse(
+                name: String,
+                node: MutableMap<String, Any>,
+                parserContext: Mapper.TypeParser.ParserContext): Mapper.Builder<*,*>
+        {
+            val builder = Builder(name, ExternalFileService.instance)
+            val entries = node.entries.iterator()
+            for ((key, value) in entries) {
+                when (key) {
+                    "type" -> {}
+                    "key_field" -> {
+                        builder.keyField(value.toString())
+                        entries.remove()
+                    }
+                    "update_interval" -> {
+                        builder.updateInterval(value.toString().toLong())
+                        entries.remove()
+                    }
+                    "url" -> {
+                        builder.url(value.toString())
+                        entries.remove()
+                    }
+                    else -> {
+                        throw MapperParsingException(
+                                "Setting [${key}] cannot be modified for field [$name]")
+                    }
+                }
+            }
+            return builder
+        }
+    }
+
+    class Builder : FieldMapper.Builder<Builder, ExternalFileFieldMapper> {
+
+        private val extFileService: ExternalFileService
+        private var updateInterval: Long? = null
+        private var url: String? = null
+
+        constructor(
+                name: String,
+                extFileService: ExternalFileService
+        ) : super(name, FIELD_TYPE, FIELD_TYPE)
+        {
+            this.builder = this
+            this.extFileService = extFileService
+        }
+
+        override fun fieldType(): ExternalFileFieldType {
+            return fieldType as ExternalFileFieldType
+        }
+
+        override fun build(context: BuilderContext): ExternalFileFieldMapper {
+            val indexName = context.indexSettings()
+                    .get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
+            val indexUuid = context.indexSettings()
+                    .get(IndexMetaData.SETTING_INDEX_UUID)
+            extFileService.addField(
+                    Index(indexName, indexUuid), name,
+                    this.updateInterval ?: DEFAULT_UPDATE_INTERVAL,
+                    url)
+            setupFieldType(context)
+            return ExternalFileFieldMapper(
+                    name, fieldType, defaultFieldType, context.indexSettings(),
+                    multiFieldsBuilder.build(this, context), copyTo)
+        }
+
+        override fun setupFieldType(context: BuilderContext) {
+            super.setupFieldType(context)
+            fieldType().setExtFileService(extFileService)
+        }
+
+        fun keyField(keyFieldName: String): Builder {
+            fieldType().setKeyFieldName(keyFieldName)
+            return this
+        }
+
+        fun updateInterval(interval: Long): Builder {
+            this.updateInterval = interval
+            return this
+        }
+
+        fun url(url: String): Builder {
+            this.url = url
+            return this
+        }
+    }
 
     class ExternalFileFieldType : MappedFieldType {
         private var extFileService: ExternalFileService? = null
         private var keyFieldName: String? = null
 
         constructor()
-        constructor(ref: ExternalFileFieldType) : super(ref)
+        private constructor(ref: ExternalFileFieldType) : super(ref) {
+            this.keyFieldName = ref.keyFieldName
+        }
 
         fun setExtFileService(extFileService: ExternalFileService) {
             this.extFileService = extFileService
+        }
+
+        fun keyFieldName(): String? {
+            return keyFieldName
         }
 
         fun setKeyFieldName(keyFieldName: String) {
@@ -110,92 +215,72 @@ class ExternalFileFieldMapper(
 
         override fun fielddataBuilder(): IndexFieldData.Builder {
             val extFileService = this.extFileService
-            return object : IndexFieldData.Builder {
-                override fun build(
-                        indexSettings: IndexSettings, fieldType: MappedFieldType,
-                        cache: IndexFieldDataCache, breakerService: CircuitBreakerService,
-                        mapperService: MapperService
-                ): IndexNumericFieldData {
-                    val keyFieldType = if (keyFieldName != null) {
+            return IndexFieldData.Builder {
+                indexSettings, _, cache, breakerService, mapperService ->
+
+                val keyFieldType = when (keyFieldName) {
+                    null -> {
+                        if (indexSettings.isSingleType) {
+                            mapperService.fullName(IdFieldMapper.NAME)
+                        } else {
+                            mapperService.fullName(UidFieldMapper.NAME)
+                        }
+                    }
+                    else -> {
                         mapperService.fullName(keyFieldName)
-                    } else if (indexSettings.isSingleType()) {
-                        mapperService.fullName(IdFieldMapper.NAME)
-                    } else {
-                        mapperService.fullName(UidFieldMapper.NAME)
                     }
-                    val keyFieldData = keyFieldType.fielddataBuilder().build(
-                            indexSettings, keyFieldType, cache, breakerService, mapperService)
-                    if (extFileService == null) {
-                        throw IllegalArgumentException("Missing external file service")
-                    }
-                    val values = extFileService.getValues(indexSettings.getIndex(), name())
-                    return ExternalFileFieldData(
-                            name(), indexSettings.getIndex(), keyFieldData, values)
                 }
+                val keyFieldData = keyFieldType.fielddataBuilder().build(
+                        indexSettings, keyFieldType, cache, breakerService, mapperService)
+                if (extFileService == null) {
+                    throw IllegalArgumentException("Missing external file service")
+                }
+                val values = extFileService.getValues(indexSettings.index, name())
+                ExternalFileFieldData(
+                        name(), indexSettings.index, keyFieldData, values)
             }
         }
     }
 
-    class ExternalFileFieldData : IndexNumericFieldData {
-
-        private val fieldName: String
-        private val index: Index
-        private val keyFieldData: IndexFieldData<*>
-        private val values: Map<String, Double>
-
-        constructor(
-                fieldName: String,
-                index: Index,
-                keyFieldData: IndexFieldData<*>,
-                values: Map<String, Double>
-        ) {
-            this.fieldName = fieldName
-            this.index = index
-            this.keyFieldData = keyFieldData
-            this.values = values
-        }
-
-        class ExternalFileValues : SortedNumericDoubleValues {
-
-            private var doc: Int = -1
+    class ExternalFileFieldData(
+            private val fieldName: String,
+            private val index: Index,
+            private val keyFieldData: IndexFieldData<*>,
             private val values: Map<String, Double>
-            private val uids: SortedBinaryDocValues
+    ) : IndexNumericFieldData {
 
-            constructor(values: Map<String, Double>, uids: SortedBinaryDocValues) {
-                this.values = values
-                this.uids = uids
-            }
+        class AtomicUidKeyFieldData(
+                private val values: Map<String, Double>,
+                private val keyFieldData: AtomicFieldData
+        ) : AtomicNumericFieldData {
 
-            override fun setDocument(doc: Int) {
-                this.doc = doc
-                uids.setDocument(doc)
-            }
+            class Values(
+                    private val values: Map<String, Double>,
+                    private val uids: SortedBinaryDocValues
+            ) : SortedNumericDoubleValues() {
 
-            override fun valueAt(index: Int): Double {
-                return values.getOrDefault(getUid().id(), 0.0)
-            }
+                private var doc: Int = -1
 
-            override fun count(): Int {
-                return if (values.containsKey(getUid().id())) 1 else 0
-            }
+                override fun setDocument(doc: Int) {
+                    this.doc = doc
+                    uids.setDocument(doc)
+                }
 
-            private fun getUid(): Uid {
-                return Uid.createUid(uids.valueAt(0).utf8ToString())
-            }
-        }
+                override fun valueAt(index: Int): Double {
+                    return values.getOrDefault(getUid().id(), 0.0)
+                }
 
-        class Atomic : AtomicNumericFieldData {
+                override fun count(): Int {
+                    return if (values.containsKey(getUid().id())) 1 else 0
+                }
 
-            private val values: Map<String, Double>
-            private val keyFieldData: AtomicFieldData
-
-            constructor(values: Map<String, Double>, keyFieldData: AtomicFieldData) {
-                this.values = values
-                this.keyFieldData = keyFieldData
+                private fun getUid(): Uid {
+                    return Uid.createUid(uids.valueAt(0).utf8ToString())
+                }
             }
 
             override fun getDoubleValues(): SortedNumericDoubleValues {
-                return ExternalFileValues(values, keyFieldData.getBytesValues())
+                return Values(values, keyFieldData.bytesValues)
             }
 
             override fun getLongValues(): SortedNumericDocValues {
@@ -203,7 +288,56 @@ class ExternalFileFieldMapper(
             }
 
             override fun getScriptValues(): ScriptDocValues.Doubles {
-                return ScriptDocValues.Doubles(ExternalFileValues(values, keyFieldData.getBytesValues()))
+                return ScriptDocValues.Doubles(Values(values, keyFieldData.bytesValues))
+            }
+
+            override fun getBytesValues(): SortedBinaryDocValues {
+                throw UnsupportedOperationException("getBytesValues: not implemented")
+            }
+
+            override fun ramBytesUsed(): Long {
+                return 0
+            }
+
+            override fun close() {}
+        }
+
+        class AtomicNumericKeyFieldData(
+                private val values: Map<String, Double>,
+                private val keyFieldData: AtomicNumericFieldData
+        ) : AtomicNumericFieldData {
+
+            class Values(
+                    private val values: Map<String, Double>,
+                    private val keys: SortedNumericDocValues
+            ) : SortedNumericDoubleValues() {
+
+                private var doc: Int = -1
+
+                override fun setDocument(doc: Int) {
+                    this.doc = doc
+                    keys.setDocument(doc)
+                }
+
+                override fun valueAt(index: Int): Double {
+                    return values.getOrDefault(keys.valueAt(0).toString(), 0.0)
+                }
+
+                override fun count(): Int {
+                    return if (values.containsKey(keys.valueAt(0).toString())) 1 else 0
+                }
+            }
+
+            override fun getDoubleValues(): SortedNumericDoubleValues {
+                return Values(values, keyFieldData.longValues)
+            }
+
+            override fun getLongValues(): SortedNumericDocValues {
+                throw UnsupportedOperationException("getLongValues: not implemented")
+            }
+
+            override fun getScriptValues(): ScriptDocValues.Doubles {
+                return ScriptDocValues.Doubles(Values(values, keyFieldData.longValues))
             }
 
             override fun getBytesValues(): SortedBinaryDocValues {
@@ -229,19 +363,14 @@ class ExternalFileFieldMapper(
             return fieldName
         }
 
-        override fun load(ctx: LeafReaderContext): Atomic {
-            // val values = extFileService.getValues(index, fieldName)
-            // if (keyFieldData is UidIndexFieldData) {
-            //     return AtomicUidFieldData(values, keyFieldData.load(ctx))
-            // } else if (keyFieldData is IndexNumericFieldData) {
-            //     return AtomicNumericFieldData(values, keyFieldData.load(ctx))
-            // } else {
-            //     return AtomicBytesFieldData(values, keyFieldData.load(ctx))
-            // }
-            return Atomic(values, keyFieldData.load(ctx))
+        override fun load(ctx: LeafReaderContext): AtomicNumericFieldData {
+            if (keyFieldData is IndexNumericFieldData) {
+                return AtomicNumericKeyFieldData(values, keyFieldData.load(ctx))
+            }
+            return AtomicUidKeyFieldData(values, keyFieldData.load(ctx))
         }
 
-        override fun loadDirect(ctx: LeafReaderContext): Atomic {
+        override fun loadDirect(ctx: LeafReaderContext): AtomicNumericFieldData {
             return load(ctx)
         }
 
@@ -253,97 +382,5 @@ class ExternalFileFieldMapper(
         }
 
         override fun clear() {}
-    }
-
-    class TypeParser : Mapper.TypeParser {
-
-        override fun parse(
-                name: String,
-                node: MutableMap<String, Any>,
-                parserContext: Mapper.TypeParser.ParserContext): Mapper.Builder<*,*>
-        {
-            val builder = Builder(name, ExternalFileService.instance)
-            val entries = node.entries.iterator()
-            for ((key, value) in entries) {
-                when (key) {
-                    "type" -> {}
-                    "key_field" -> {
-                        builder.keyField(value.toString())
-                        entries.remove()
-                    }
-                    "update_interval" -> {
-                        builder.updateInterval(value.toString().toLong())
-                        entries.remove()
-                    }
-                    "url" -> {
-                        builder.url(value.toString())
-                    }
-                    else -> {
-                        throw MapperParsingException(
-                            "Setting [${key}] cannot be modified for field [$name]")
-                    }
-                }
-            }
-            return builder
-        }
-    }
-
-    class Builder : FieldMapper.Builder<Builder, ExternalFileFieldMapper> {
-
-        private val extFileService: ExternalFileService
-        private var updateInterval: Long? = null
-        private var url: String? = null
-
-        constructor(
-                name: String,
-                extFileService: ExternalFileService
-        ) : super(name, FIELD_TYPE, FIELD_TYPE)
-        {
-            this.builder = this
-            this.extFileService = extFileService
-        }
-
-        override fun fieldType(): ExternalFileFieldType {
-            return super.fieldType() as ExternalFileFieldType
-        }
-
-        override fun build(context: BuilderContext): ExternalFileFieldMapper {
-            setupFieldType(context)
-            val indexName = context.indexSettings()
-                    .get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
-            val indexUuid = context.indexSettings()
-                    .get(IndexMetaData.SETTING_INDEX_UUID)
-            extFileService.addField(
-                    Index(indexName, indexUuid), name,
-                    this.updateInterval ?: DEFAULT_UPDATE_INTERVAL,
-                    url)
-            return ExternalFileFieldMapper(
-                    name, fieldType, defaultFieldType, context.indexSettings(),
-                    multiFieldsBuilder.build(this, context), copyTo)
-        }
-
-        override fun setupFieldType(context: BuilderContext) {
-            super.setupFieldType(context)
-            fieldType().setExtFileService(extFileService)
-            fieldType.setIndexOptions(IndexOptions.NONE)
-            defaultFieldType.setIndexOptions(IndexOptions.NONE)
-            fieldType.setHasDocValues(false)
-            defaultFieldType.setHasDocValues(false)
-        }
-
-        fun keyField(keyFieldName: String): Builder {
-            fieldType().setKeyFieldName(keyFieldName)
-            return this
-        }
-
-        fun updateInterval(interval: Long): Builder {
-            this.updateInterval = interval
-            return this
-        }
-
-        fun url(url: String): Builder {
-            this.url = url
-            return this
-        }
     }
 }
