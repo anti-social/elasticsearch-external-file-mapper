@@ -38,6 +38,7 @@ import org.hamcrest.Matchers.containsString
 import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
+import company.evo.elasticsearch.plugin.mapper.ExternalMapperPlugin
 import java.io.PrintWriter
 import java.nio.file.StandardOpenOption
 
@@ -46,33 +47,23 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
 
     lateinit var indexService: IndexService
     lateinit var extFileService: ExternalFileService
-    lateinit var mapperRegistry: MapperRegistry
     lateinit var parser: DocumentMapperParser
 
     @Before fun setup() {
-        this.indexService = this.createIndex("test")
+        indexService = createIndex("test")
         val nodeSettings = Settings.builder()
                 .put(Environment.PATH_HOME_SETTING.key, createTempDir())
                 .build()
-        this.extFileService = ExternalFileService(
+        parser = indexService.mapperService().documentMapperParser()
+        extFileService = ExternalFileService(
                 nodeSettings, indexService.threadPool, node().nodeEnvironment)
-        this.extFileService.doStart()
-        this.mapperRegistry = MapperRegistry(
-            Collections.singletonMap(
-                ExternalFileFieldMapper.CONTENT_TYPE,
-                ExternalFileFieldMapper.TypeParser() as TypeParser),
-            Collections.emptyMap())
-        this.parser = DocumentMapperParser(
-            indexService.indexSettings, indexService.mapperService(),
-            indexService.indexAnalyzers, indexService.xContentRegistry(),
-            indexService.similarityService(), mapperRegistry,
-            { indexService.newQueryShardContext(
-                    0, null,
-                    { throw UnsupportedOperationException() }) })
+        extFileService.doStart()
     }
 
     override fun getPlugins(): Collection<Class<out Plugin>> {
-        return pluginList(InternalSettingsPlugin::class.java)
+        return pluginList(
+                InternalSettingsPlugin::class.java,
+                ExternalMapperPlugin::class.java)
     }
 
     fun testDefaults() {
@@ -89,6 +80,53 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         assertNotNull(fields)
         assertEquals(Arrays.toString(fields), 0, fields.size)
     }
+
+    fun testIdKeyField() {
+        val mapping = XContentFactory.jsonBuilder()
+                .startObject().startObject("type")
+                    .startObject("properties")
+                        .startObject("id")
+                            .field("type", "long")
+                            .field("index", false)
+                            .field("doc_values", true)
+                        .endObject()
+                        .startObject("ext_field")
+                            .field("type", "external_file")
+                            .field("key_field", "id")
+                        .endObject()
+                    .endObject()
+                .endObject().endObject().string()
+        val mapper = parser.parse("type", CompressedXContent(mapping))
+        val parsedDoc = mapper.parse("test", "type", "1",
+                XContentFactory.jsonBuilder()
+                        .startObject()
+                            .field("id", 1)
+                            .field("ext_field", "value")
+                        .endObject()
+                        .bytes())
+        val fields = parsedDoc.rootDoc().getFields("ext_field")
+        assertNotNull(fields)
+        assertEquals(Arrays.toString(fields), 0, fields.size)
+    }
+
+// TODO find a way to check existing of the key_field
+//    fun testNonexistentIdKeyField() {
+//        val mapping = XContentFactory.jsonBuilder()
+//                .startObject().startObject("type")
+//                    .startObject("properties")
+//                        .startObject("ext_field")
+//                            .field("type", "external_file")
+//                            .field("key_field", "id")
+//                        .endObject()
+//                    .endObject()
+//                .endObject().endObject().string()
+//        try {
+//            parser.parse("type", CompressedXContent(mapping))
+//            fail("Expected a mapper parsing exception")
+//        } catch (e: MapperParsingException) {
+//            assertThat(e.message, containsString("[id] field not found"))
+//        }
+//    }
 
     fun testUpdateInterval() {
         val mapping = XContentFactory.jsonBuilder()
