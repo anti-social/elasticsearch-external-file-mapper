@@ -262,15 +262,23 @@ class ExternalFileFieldMapper(
                 }
 
                 override fun valueAt(index: Int): Double {
-                    return values.get(getUid().id(), 0.0)
+                    return try {
+                        values.get(getKey(), 0.0)
+                    } catch (e: NumberFormatException) {
+                        0.0
+                    }
                 }
 
                 override fun count(): Int {
-                    return if (values.contains(getUid().id())) 1 else 0
+                    return try {
+                        if (values.contains(getKey())) 1 else 0
+                    } catch (e: NumberFormatException) {
+                        0
+                    }
                 }
 
-                private fun getUid(): Uid {
-                    return Uid.createUid(uids.valueAt(0).utf8ToString())
+                private fun getKey(): Long {
+                    return Uid.createUid(uids.valueAt(0).utf8ToString()).id().toLong()
                 }
             }
 
@@ -315,11 +323,11 @@ class ExternalFileFieldMapper(
                 }
 
                 override fun valueAt(index: Int): Double {
-                    return values.get(keys.valueAt(0).toString(), 0.0)
+                    return values.get(keys.valueAt(0), 0.0)
                 }
 
                 override fun count(): Int {
-                    return if (values.contains(keys.valueAt(0).toString())) 1 else 0
+                    return if (values.contains(keys.valueAt(0))) 1 else 0
                 }
             }
 

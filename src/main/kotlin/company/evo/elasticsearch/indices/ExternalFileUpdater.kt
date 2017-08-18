@@ -21,8 +21,8 @@ internal data class FileKey(
 interface FileValues {
     fun lastModified(): FileTime?
     fun size(): Int
-    fun get(key: String, defaultValue: Double): Double
-    fun contains(key: String): Boolean
+    fun get(key: Long, defaultValue: Double): Double
+    fun contains(key: Long): Boolean
 }
 
 class EmptyFileValues : FileValues {
@@ -33,17 +33,17 @@ class EmptyFileValues : FileValues {
     override fun lastModified(): FileTime? {
         return null
     }
-    override fun get(key: String, defaultValue: Double): Double {
+    override fun get(key: Long, defaultValue: Double): Double {
         return defaultValue
     }
 
-    override fun contains(key: String): Boolean {
+    override fun contains(key: Long): Boolean {
         return false
     }
 }
 
 class MapFileValues(
-        private val values: Map<String, Double>,
+        private val values: Map<Long, Double>,
         private val lastModified: FileTime
 ) : FileValues {
     override fun size(): Int {
@@ -54,11 +54,11 @@ class MapFileValues(
         return lastModified
     }
 
-    override fun get(key: String, defaultValue: Double): Double {
+    override fun get(key: Long, defaultValue: Double): Double {
         return values.getOrDefault(key, defaultValue)
     }
 
-    override fun contains(key: String): Boolean {
+    override fun contains(key: Long): Boolean {
         return values.containsKey(key)
     }
 }
@@ -129,8 +129,8 @@ class ExternalFileUpdater(
         return null
     }
 
-    internal fun parse(path: Path): Map<String, Double> {
-        val values = HashMap<String, Double>()
+    private fun parse(path: Path): Map<Long, Double> {
+        val values = HashMap<Long, Double>()
         Files.newBufferedReader(path).use {
             for (rawLine in it.lines()) {
                 val line = rawLine.trim()
@@ -143,7 +143,7 @@ class ExternalFileUpdater(
                 val delimiterIx = line.indexOf('=')
                 val key = line.substring(0, delimiterIx).trim()
                 val value = line.substring(delimiterIx + 1).trim()
-                values[key] = value.toDouble()
+                values[key.toLong()] = value.toDouble()
             }
         }
         return values
