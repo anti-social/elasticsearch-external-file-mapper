@@ -37,13 +37,13 @@ class ExternalFileUpdaterTestCase : Assert() {
 
         var downloaded = fileUpdater.download()
         assert(downloaded)
-        val values = fileUpdater.loadValues(null)?.values
+        val values = fileUpdater.loadValues(null)
         values ?: failOnNull()
         assertNotNull(values)
-        assertEquals(3, values.size)
-        assertEquals(1.1, values["1"])
-        assertEquals(1.2, values["2"])
-        assertEquals(1.3, values["3"])
+        assertEquals(3, values.size())
+        assertEquals(1.1, values.get("1", 0.0), 0.001)
+        assertEquals(1.2, values.get("2", 0.0), 0.001)
+        assertEquals(1.3, values.get("3", 0.0), 0.001)
 
         downloaded = fileUpdater.download()
         assertFalse(downloaded)

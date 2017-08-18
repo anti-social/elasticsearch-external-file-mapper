@@ -34,10 +34,11 @@ class ExternalFileService : AbstractLifecycleComponent {
 
     private val nodeDir: Path
     private val threadPool: ThreadPool
-    private val values: MutableMap<FileKey, FileValue?> = ConcurrentHashMap()
+    private val values: MutableMap<FileKey, FileValues?> = ConcurrentHashMap()
     private val tasks: MutableMap<FileKey, UpdateTask> = HashMap()
 
     companion object {
+        val EMPTY_FILE_VALUES: FileValues = EmptyFileValues()
         lateinit var instance: ExternalFileService
         var started: Boolean = false
     }
@@ -89,7 +90,7 @@ class ExternalFileService : AbstractLifecycleComponent {
                             fileUpdater.download()
                         }
                         this.values.compute(key) { _, v ->
-                            fileUpdater.loadValues(v?.lastModified)
+                            fileUpdater.loadValues(v?.lastModified())
                         }
                     },
                     TimeValue.timeValueSeconds(updateInterval),
@@ -105,12 +106,12 @@ class ExternalFileService : AbstractLifecycleComponent {
         return this.tasks[key]?.settings?.updateInterval
     }
 
-    fun getValues(index: Index, fieldName: String): Map<String, Double> {
+    fun getValues(index: Index, fieldName: String): FileValues {
         return getValues(index.name, fieldName)
     }
 
-    fun getValues(indexName: String, fieldName: String): Map<String, Double> {
+    fun getValues(indexName: String, fieldName: String): FileValues {
         val key = FileKey(indexName, fieldName)
-        return this.values[key]?.values.orEmpty()
+        return this.values[key] ?: EMPTY_FILE_VALUES
     }
 }

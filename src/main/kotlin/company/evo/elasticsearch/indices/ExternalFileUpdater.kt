@@ -18,10 +18,50 @@ internal data class FileKey(
         val fieldName: String
 )
 
-internal data class FileValue(
-        val values: Map<String, Double>,
-        val lastModified: FileTime
-)
+interface FileValues {
+    fun lastModified(): FileTime?
+    fun size(): Int
+    fun get(key: String, defaultValue: Double): Double
+    fun contains(key: String): Boolean
+}
+
+class EmptyFileValues : FileValues {
+    override fun size(): Int {
+        return 0
+    }
+
+    override fun lastModified(): FileTime? {
+        return null
+    }
+    override fun get(key: String, defaultValue: Double): Double {
+        return defaultValue
+    }
+
+    override fun contains(key: String): Boolean {
+        return false
+    }
+}
+
+class MapFileValues(
+        private val values: Map<String, Double>,
+        private val lastModified: FileTime
+) : FileValues {
+    override fun size(): Int {
+        return values.size
+    }
+
+    override fun lastModified(): FileTime? {
+        return lastModified
+    }
+
+    override fun get(key: String, defaultValue: Double): Double {
+        return values.getOrDefault(key, defaultValue)
+    }
+
+    override fun contains(key: String): Boolean {
+        return values.containsKey(key)
+    }
+}
 
 data class FileSettings(
         val updateInterval: Long,
@@ -71,7 +111,7 @@ class ExternalFileUpdater(
         }
     }
 
-    internal fun loadValues(lastModified: FileTime?): FileValue? {
+    internal fun loadValues(lastModified: FileTime?): FileValues? {
         val extFilePath = getExternalFilePath()
         try {
             val fileLastModified = Files.getLastModifiedTime(extFilePath)
@@ -80,7 +120,7 @@ class ExternalFileUpdater(
                 logger.info("Loaded ${values.size} values " +
                         "for [${fieldName}] field of [${index.name}] index " +
                         "from file [${extFilePath}]")
-                return FileValue(values, fileLastModified)
+                return MapFileValues(values, fileLastModified)
             }
         } catch (e: NoSuchFileException) {
         } catch (e: IOException) {

@@ -22,33 +22,28 @@ import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.index.SortedNumericDocValues
 import org.apache.lucene.search.Query
 import org.apache.lucene.search.SortField
+
+import org.elasticsearch.cluster.metadata.IndexMetaData
 import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.common.xcontent.ToXContent
+import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.index.Index
-import org.elasticsearch.index.IndexSettings
+import org.elasticsearch.index.fielddata.*
 import org.elasticsearch.index.mapper.FieldMapper
 import org.elasticsearch.index.mapper.IdFieldMapper
 import org.elasticsearch.index.mapper.MappedFieldType
 import org.elasticsearch.index.mapper.Mapper
 import org.elasticsearch.index.mapper.MapperParsingException
-import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.index.mapper.ParseContext
 import org.elasticsearch.index.mapper.Uid
 import org.elasticsearch.index.mapper.UidFieldMapper
 import org.elasticsearch.index.query.QueryShardContext
 import org.elasticsearch.index.query.QueryShardException
-import org.elasticsearch.indices.breaker.CircuitBreakerService
 import org.elasticsearch.search.MultiValueMode
 
-import org.elasticsearch.index.mapper.TypeParsers.parseField
 
 import company.evo.elasticsearch.indices.ExternalFileService
-import org.apache.lucene.document.NumericDocValuesField
-import org.elasticsearch.cluster.metadata.IndexMetaData
-import org.elasticsearch.common.xcontent.ToXContent
-import org.elasticsearch.common.xcontent.XContentBuilder
-import org.elasticsearch.index.fielddata.*
-import org.elasticsearch.index.fielddata.plain.PagedBytesIndexFieldData
-import java.util.*
+import company.evo.elasticsearch.indices.FileValues
 
 
 class ExternalFileFieldMapper(
@@ -246,16 +241,16 @@ class ExternalFileFieldMapper(
             private val fieldName: String,
             private val index: Index,
             private val keyFieldData: IndexFieldData<*>,
-            private val values: Map<String, Double>
+            private val values: FileValues
     ) : IndexNumericFieldData {
 
         class AtomicUidKeyFieldData(
-                private val values: Map<String, Double>,
+                private val values: FileValues,
                 private val keyFieldData: AtomicFieldData
         ) : AtomicNumericFieldData {
 
             class Values(
-                    private val values: Map<String, Double>,
+                    private val values: FileValues,
                     private val uids: SortedBinaryDocValues
             ) : SortedNumericDoubleValues() {
 
@@ -267,11 +262,11 @@ class ExternalFileFieldMapper(
                 }
 
                 override fun valueAt(index: Int): Double {
-                    return values.getOrDefault(getUid().id(), 0.0)
+                    return values.get(getUid().id(), 0.0)
                 }
 
                 override fun count(): Int {
-                    return if (values.containsKey(getUid().id())) 1 else 0
+                    return if (values.contains(getUid().id())) 1 else 0
                 }
 
                 private fun getUid(): Uid {
@@ -303,12 +298,12 @@ class ExternalFileFieldMapper(
         }
 
         class AtomicNumericKeyFieldData(
-                private val values: Map<String, Double>,
+                private val values: FileValues,
                 private val keyFieldData: AtomicNumericFieldData
         ) : AtomicNumericFieldData {
 
             class Values(
-                    private val values: Map<String, Double>,
+                    private val values: FileValues,
                     private val keys: SortedNumericDocValues
             ) : SortedNumericDoubleValues() {
 
@@ -320,11 +315,11 @@ class ExternalFileFieldMapper(
                 }
 
                 override fun valueAt(index: Int): Double {
-                    return values.getOrDefault(keys.valueAt(0).toString(), 0.0)
+                    return values.get(keys.valueAt(0).toString(), 0.0)
                 }
 
                 override fun count(): Int {
-                    return if (values.containsKey(keys.valueAt(0).toString())) 1 else 0
+                    return if (values.contains(keys.valueAt(0).toString())) 1 else 0
                 }
             }
 
