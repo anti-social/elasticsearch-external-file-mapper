@@ -10,7 +10,7 @@ import org.junit.Test
 import org.elasticsearch.index.Index
 
 
-class ExternalFileUpdaterTestCase : Assert() {
+class ExternalFileTestCase : Assert() {
 
     lateinit var tempDir: Path
 
@@ -29,7 +29,7 @@ class ExternalFileUpdaterTestCase : Assert() {
         val indexName = "test"
         val fieldName = "ext_price"
         val fileUrl = "http://localhost:8080/ext_price.txt"
-        val fileUpdater = ExternalFileUpdater(
+        val fileUpdater = ExternalFile(
                 this.tempDir,
                 Index(indexName, "_na_"),
                 fieldName,

@@ -16,8 +16,6 @@
 
 package company.evo.elasticsearch.indices
 
-import java.io.IOException
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
@@ -71,9 +69,8 @@ class ExternalFileService : AbstractLifecycleComponent {
     override fun doClose() {}
 
     @Synchronized
-    fun addField(index: Index, fieldName: String, updateInterval: Long, url: String?, timeout: Int?) {
-        val fileSettings = FileSettings(updateInterval, url, timeout)
-        val fileUpdater = ExternalFileUpdater(this.nodeDir, index, fieldName, fileSettings)
+    fun addField(index: Index, fieldName: String, fileSettings: FileSettings) {
+        val fileUpdater = ExternalFile(this.nodeDir, index, fieldName, fileSettings)
         val key = FileKey(index.name, fieldName)
         this.values.computeIfAbsent(key) {
             fileUpdater.loadValues(null)
@@ -86,14 +83,14 @@ class ExternalFileService : AbstractLifecycleComponent {
         val task = this.tasks.getOrPut(key) {
             val future = threadPool.scheduleWithFixedDelay(
                     {
-                        if (url != null) {
+                        if (fileSettings.url != null) {
                             fileUpdater.download()
                         }
                         this.values.compute(key) { _, v ->
                             fileUpdater.loadValues(v?.lastModified())
                         }
                     },
-                    TimeValue.timeValueSeconds(updateInterval),
+                    TimeValue.timeValueSeconds(fileSettings.updateInterval),
                     ThreadPool.Names.SAME)
             UpdateTask(future, fileSettings)
         }

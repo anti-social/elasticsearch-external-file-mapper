@@ -43,6 +43,7 @@ import org.elasticsearch.search.MultiValueMode
 
 
 import company.evo.elasticsearch.indices.ExternalFileService
+import company.evo.elasticsearch.indices.FileSettings
 import company.evo.elasticsearch.indices.FileValues
 
 
@@ -151,8 +152,9 @@ class ExternalFileFieldMapper(
                     .get(IndexMetaData.SETTING_INDEX_UUID)
             extFileService.addField(
                     Index(indexName, indexUuid), name,
-                    this.updateInterval ?: DEFAULT_UPDATE_INTERVAL,
-                    url, timeout)
+                    FileSettings(
+                            this.updateInterval ?: DEFAULT_UPDATE_INTERVAL,
+                            url, timeout))
             setupFieldType(context)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),

@@ -70,7 +70,7 @@ data class FileSettings(
         val timeout: Int?
 )
 
-class ExternalFileUpdater(
+class ExternalFile(
         private val dataDir: Path,
         private val index: Index,
         private val fieldName: String,
