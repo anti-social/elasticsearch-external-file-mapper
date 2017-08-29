@@ -84,36 +84,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                         .endObject().endObject().endObject())
                 .get()
 
-        client().prepareIndex("test", "product", "1")
-                .setSource(
-                        jsonBuilder()
-                        .startObject()
-                            .field("name", "Bergamont")
-                        .endObject())
-                .get()
-        client().prepareIndex("test", "product", "2")
-                .setSource(
-                        jsonBuilder()
-                        .startObject()
-                            .field("name", "Specialized")
-                        .endObject())
-                .get()
-        client().prepareIndex("test", "product", "3")
-                .setSource(
-                        jsonBuilder()
-                        .startObject()
-                            .field("name", "Cannondale")
-                        .endObject())
-                        .get()
-        client().prepareIndex("test", "product", "4")
-                .setSource(
-                        jsonBuilder()
-                        .startObject()
-                            .field("name", "Honda")
-                        .endObject())
-                .get()
-
-        client().admin().indices().prepareRefresh().get()
+        indexTestDocuments()
 
         val response = client().search(
                 searchRequest()
@@ -123,6 +94,68 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                                 fieldValueFactorFunction("ext_price")
                                 .missing(0.0)))
                         .explain(false)))
+                .actionGet()
+        assertNoFailures(response)
+        val hits = response.hits
+        assertThat(hits.hits.size, equalTo(4))
+        assertThat(hits.getAt(0).id, equalTo("3"))
+        assertThat(hits.getAt(0).score, equalTo(1.3f))
+        assertThat(hits.getAt(1).id, equalTo("2"))
+        assertThat(hits.getAt(1).score, equalTo(1.2f))
+        assertThat(hits.getAt(2).id, equalTo("1"))
+        assertThat(hits.getAt(2).score, equalTo(1.1f))
+        assertThat(hits.getAt(3).id, equalTo("4"))
+        assertThat(hits.getAt(3).score, equalTo(0.0f))
+    }
+
+    fun testInMemoryValues() {
+        val dataPath = createTempDir()
+        val homePath = createTempDir()
+        val settings = Settings.builder()
+                .put(Environment.PATH_HOME_SETTING.key, homePath)
+                .put(Environment.PATH_DATA_SETTING.key, dataPath)
+                .build()
+        val node = internalCluster().startNode(settings)
+        val nodePaths = internalCluster()
+                .getInstance(NodeEnvironment::class.java, node)
+                .nodeDataPaths()
+        assertEquals(1, nodePaths.size)
+
+        val nodesResponse = client().admin().cluster()
+                .prepareNodesInfo()
+                .get()
+        assertEquals(1, nodesResponse.nodes.size)
+
+        val indexName = "test"
+        copyTestResources(nodePaths[0], indexName)
+
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .addMapping(
+                        "product",
+                        jsonBuilder()
+                                .startObject().startObject("product").startObject("properties")
+                                    .startObject("name")
+                                        .field("type", "text")
+                                    .endObject()
+                                    .startObject("ext_price")
+                                        .field("type", "external_file")
+                                        .field("values_store_type", "ram")
+                                    .endObject()
+                                .endObject().endObject().endObject())
+                .get()
+
+        indexTestDocuments()
+
+        val response = client().search(
+                searchRequest()
+                        .source(
+                                searchSource()
+                                        .query(functionScoreQuery(
+                                                fieldValueFactorFunction("ext_price")
+                                                        .missing(0.0)))
+                                        .explain(false)))
                 .actionGet()
         assertNoFailures(response)
         val hits = response.hits
@@ -244,5 +277,39 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
             logger.warn(">>> Copied external file to: $extFilePath")
             Files.copy(it, extFilePath)
         }
+    }
+
+    private fun indexTestDocuments() {
+        client().prepareIndex("test", "product", "1")
+                .setSource(
+                        jsonBuilder()
+                                .startObject()
+                                    .field("name", "Bergamont")
+                                .endObject())
+                .get()
+        client().prepareIndex("test", "product", "2")
+                .setSource(
+                        jsonBuilder()
+                                .startObject()
+                                    .field("name", "Specialized")
+                                .endObject())
+                .get()
+        client().prepareIndex("test", "product", "3")
+                .setSource(
+                        jsonBuilder()
+                                .startObject()
+                                    .field("name", "Cannondale")
+                                .endObject())
+                .get()
+        client().prepareIndex("test", "product", "4")
+                .setSource(
+                        jsonBuilder()
+                                .startObject()
+                                    .field("name", "Honda")
+                                .endObject())
+                .get()
+
+        client().admin().indices().prepareRefresh().get()
+
     }
 }

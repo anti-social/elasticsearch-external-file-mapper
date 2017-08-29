@@ -1,0 +1,3 @@
+[submodule "htable-java"]
+	path = htable-java
+	url = https://github.com/anti-social/htable-java.git
