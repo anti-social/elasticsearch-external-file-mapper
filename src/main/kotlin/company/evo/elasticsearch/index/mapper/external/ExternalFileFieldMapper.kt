@@ -110,6 +110,10 @@ class ExternalFileFieldMapper(
                         builder.url(value.toString())
                         entries.remove()
                     }
+                    "timeout" -> {
+                        builder.timeout(value.toString().toInt())
+                        entries.remove()
+                    }
                     else -> {
                         throw MapperParsingException(
                                 "Setting [${key}] cannot be modified for field [$name]")
@@ -125,6 +129,7 @@ class ExternalFileFieldMapper(
         private val extFileService: ExternalFileService
         private var updateInterval: Long? = null
         private var url: String? = null
+        private var timeout: Int? = null
 
         constructor(
                 name: String,
@@ -147,7 +152,7 @@ class ExternalFileFieldMapper(
             extFileService.addField(
                     Index(indexName, indexUuid), name,
                     this.updateInterval ?: DEFAULT_UPDATE_INTERVAL,
-                    url)
+                    url, timeout)
             setupFieldType(context)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
@@ -171,6 +176,11 @@ class ExternalFileFieldMapper(
 
         fun url(url: String): Builder {
             this.url = url
+            return this
+        }
+
+        fun timeout(timeout: Int): Builder {
+            this.timeout = timeout
             return this
         }
     }

@@ -6,6 +6,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.FileTime
 
+import org.apache.http.client.config.RequestConfig
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.impl.client.HttpClients
 
@@ -65,7 +66,8 @@ class MapFileValues(
 
 data class FileSettings(
         val updateInterval: Long,
-        val url: String?
+        val url: String?,
+        val timeout: Int?
 )
 
 class ExternalFileUpdater(
@@ -77,7 +79,16 @@ class ExternalFileUpdater(
     private val logger = Loggers.getLogger(ExternalFileService::class.java)
 
     internal fun download(): Boolean {
-        val client = HttpClients.createDefault()
+        val requestConfigBuilder = RequestConfig.custom()
+        if (settings.timeout != null) {
+            requestConfigBuilder
+                    .setConnectTimeout(settings.timeout)
+                    .setSocketTimeout(settings.timeout)
+        }
+        val requestConfig = requestConfigBuilder.build()
+        val client = HttpClients.custom()
+                .setDefaultRequestConfig(requestConfig)
+                .build()
         val httpGet = HttpGet(settings.url)
         val ver = getCurrentVersion()
         if (ver != null) {

@@ -71,8 +71,8 @@ class ExternalFileService : AbstractLifecycleComponent {
     override fun doClose() {}
 
     @Synchronized
-    fun addField(index: Index, fieldName: String, updateInterval: Long, url: String?) {
-        val fileSettings = FileSettings(updateInterval, url)
+    fun addField(index: Index, fieldName: String, updateInterval: Long, url: String?, timeout: Int?) {
+        val fileSettings = FileSettings(updateInterval, url, timeout)
         val fileUpdater = ExternalFileUpdater(this.nodeDir, index, fieldName, fileSettings)
         val key = FileKey(index.name, fieldName)
         this.values.computeIfAbsent(key) {

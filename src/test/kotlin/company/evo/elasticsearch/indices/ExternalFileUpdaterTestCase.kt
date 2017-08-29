@@ -33,7 +33,7 @@ class ExternalFileUpdaterTestCase : Assert() {
                 this.tempDir,
                 Index(indexName, "_na_"),
                 fieldName,
-                FileSettings(60, fileUrl))
+                FileSettings(60, fileUrl, null))
 
         var downloaded = fileUpdater.download()
         assert(downloaded)
