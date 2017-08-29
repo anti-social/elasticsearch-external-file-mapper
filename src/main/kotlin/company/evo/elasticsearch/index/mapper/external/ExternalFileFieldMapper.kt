@@ -45,6 +45,7 @@ import org.elasticsearch.search.MultiValueMode
 import company.evo.elasticsearch.indices.ExternalFileService
 import company.evo.elasticsearch.indices.FileSettings
 import company.evo.elasticsearch.indices.FileValues
+import company.evo.elasticsearch.indices.ValuesStoreType
 
 
 class ExternalFileFieldMapper(
@@ -61,6 +62,7 @@ class ExternalFileFieldMapper(
 
     companion object {
         const val CONTENT_TYPE = "external_file"
+        val DEFAULT_VALUES_STORE_TYPE = ValuesStoreType.FILE
         const val DEFAULT_UPDATE_INTERVAL = 600L
         val FIELD_TYPE = ExternalFileFieldType()
 
@@ -103,6 +105,11 @@ class ExternalFileFieldMapper(
                         builder.keyField(value.toString())
                         entries.remove()
                     }
+                    "values_store_type" -> {
+                        builder.valuesStoreType(
+                                ValuesStoreType.valueOf(value.toString().toUpperCase()))
+                        entries.remove()
+                    }
                     "update_interval" -> {
                         builder.updateInterval(value.toString().toLong())
                         entries.remove()
@@ -128,7 +135,8 @@ class ExternalFileFieldMapper(
     class Builder : FieldMapper.Builder<Builder, ExternalFileFieldMapper> {
 
         private val extFileService: ExternalFileService
-        private var updateInterval: Long? = null
+        private var valuesStoreTypeType: ValuesStoreType = DEFAULT_VALUES_STORE_TYPE
+        private var updateInterval: Long = DEFAULT_UPDATE_INTERVAL
         private var url: String? = null
         private var timeout: Int? = null
 
@@ -152,9 +160,7 @@ class ExternalFileFieldMapper(
                     .get(IndexMetaData.SETTING_INDEX_UUID)
             extFileService.addField(
                     Index(indexName, indexUuid), name,
-                    FileSettings(
-                            this.updateInterval ?: DEFAULT_UPDATE_INTERVAL,
-                            url, timeout))
+                    FileSettings(valuesStoreTypeType, updateInterval, url, timeout))
             setupFieldType(context)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
@@ -173,6 +179,11 @@ class ExternalFileFieldMapper(
 
         fun updateInterval(interval: Long): Builder {
             this.updateInterval = interval
+            return this
+        }
+
+        fun valuesStoreType(valuesStoreTypeType: ValuesStoreType): Builder {
+            this.valuesStoreTypeType = valuesStoreTypeType
             return this
         }
 

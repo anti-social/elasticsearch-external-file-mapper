@@ -32,7 +32,7 @@ class ExternalFileService : AbstractLifecycleComponent {
 
     private val nodeDir: Path
     private val threadPool: ThreadPool
-    private val values: MutableMap<FileKey, FileValues?> = ConcurrentHashMap()
+    private val values: MutableMap<FileKey, FileValues.Provider?> = ConcurrentHashMap()
     private val tasks: MutableMap<FileKey, UpdateTask> = HashMap()
 
     companion object {
@@ -70,10 +70,10 @@ class ExternalFileService : AbstractLifecycleComponent {
 
     @Synchronized
     fun addField(index: Index, fieldName: String, fileSettings: FileSettings) {
-        val fileUpdater = ExternalFile(this.nodeDir, index, fieldName, fileSettings)
+        val extFile = ExternalFile(this.nodeDir, index, fieldName, fileSettings)
         val key = FileKey(index.name, fieldName)
         this.values.computeIfAbsent(key) {
-            fileUpdater.loadValues(null)
+            extFile.loadValues(null)
         }
         val existingTask = this.tasks[key]
         if (existingTask != null && existingTask.settings != fileSettings) {
@@ -84,10 +84,10 @@ class ExternalFileService : AbstractLifecycleComponent {
             val future = threadPool.scheduleWithFixedDelay(
                     {
                         if (fileSettings.url != null) {
-                            fileUpdater.download()
+                            extFile.download()
                         }
                         this.values.compute(key) { _, v ->
-                            fileUpdater.loadValues(v?.lastModified())
+                            extFile.loadValues(v?.lastModified())
                         }
                     },
                     TimeValue.timeValueSeconds(fileSettings.updateInterval),
@@ -109,6 +109,6 @@ class ExternalFileService : AbstractLifecycleComponent {
 
     fun getValues(indexName: String, fieldName: String): FileValues {
         val key = FileKey(indexName, fieldName)
-        return this.values[key] ?: EMPTY_FILE_VALUES
+        return this.values[key]?.get() ?: EMPTY_FILE_VALUES
     }
 }

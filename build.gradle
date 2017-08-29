@@ -31,8 +31,11 @@ dependencies {
     compile "org.jetbrains.kotlin:kotlin-stdlib"
     compile "org.apache.httpcomponents:httpcore:${versions.httpcore}"
     compile "org.apache.httpcomponents:httpclient:${versions.httpclient}"
+    compile project(':htable-java')
 }
 
 task testFunc(type: Test) {
     include '**/*TestCase.class'
 }
+
+testFunc.outputs.upToDateWhen { false }
