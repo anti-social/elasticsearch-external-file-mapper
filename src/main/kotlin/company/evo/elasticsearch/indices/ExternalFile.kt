@@ -162,8 +162,7 @@ class ExternalFile(
                             getExternalFileDir(), fieldName, null)
                     resp.entity?.content?.use { inStream ->
                         Files.copy(inStream, tmpPath, StandardCopyOption.REPLACE_EXISTING)
-                        tmpPath.toFile().renameTo(
-                                getExternalFilePath().toFile())
+                        Files.move(tmpPath, getExternalFilePath(), StandardCopyOption.ATOMIC_MOVE)
                     }
                     updateVersion(lastModified)
                     return true

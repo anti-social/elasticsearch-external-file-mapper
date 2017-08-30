@@ -1,24 +1,17 @@
 package company.evo.elasticsearch.indices
 
-import java.nio.file.Files
-import java.nio.file.Path
+import org.elasticsearch.index.Index
 
 import org.junit.Assert
-import org.junit.Before
 import org.junit.Test
-
-import org.elasticsearch.index.Index
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 
 
 class ExternalFileTestCase : Assert() {
 
-    lateinit var tempDir: Path
-
-    @Before
-    fun setUp() {
-        this.tempDir = Files.createTempDirectory("external_files")
-        this.tempDir.toFile().deleteOnExit()
-    }
+    @Rule @JvmField
+    val tempFolder: TemporaryFolder = TemporaryFolder()
 
     private fun failOnNull(): Nothing {
         throw AssertionError("Value should not be null")
@@ -30,7 +23,7 @@ class ExternalFileTestCase : Assert() {
         val fieldName = "ext_price"
         val fileUrl = "http://localhost:8080/ext_price.txt"
         val fileUpdater = ExternalFile(
-                this.tempDir,
+                this.tempFolder.root.toPath(),
                 Index(indexName, "_na_"),
                 fieldName,
                 FileSettings(ValuesStoreType.RAM, 60, fileUrl, null))
@@ -59,7 +52,7 @@ class ExternalFileTestCase : Assert() {
         val fieldName = "ext_price"
         val fileUrl = "http://localhost:8080/ext_price.txt"
         val fileUpdater = ExternalFile(
-                this.tempDir,
+                this.tempFolder.root.toPath(),
                 Index(indexName, "_na_"),
                 fieldName,
                 FileSettings(ValuesStoreType.FILE,60, fileUrl, null))

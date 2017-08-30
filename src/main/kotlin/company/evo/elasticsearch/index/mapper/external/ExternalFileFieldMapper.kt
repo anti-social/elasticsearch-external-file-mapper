@@ -16,6 +16,8 @@
 
 package company.evo.elasticsearch.index.mapper.external
 
+import java.util.Locale
+
 import org.apache.lucene.index.IndexableField
 import org.apache.lucene.index.IndexOptions
 import org.apache.lucene.index.LeafReaderContext
@@ -107,7 +109,7 @@ class ExternalFileFieldMapper(
                     }
                     "values_store_type" -> {
                         builder.valuesStoreType(
-                                ValuesStoreType.valueOf(value.toString().toUpperCase()))
+                                ValuesStoreType.valueOf(value.toString().toUpperCase(Locale.ENGLISH)))
                         entries.remove()
                     }
                     "update_interval" -> {
