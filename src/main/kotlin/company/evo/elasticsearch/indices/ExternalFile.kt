@@ -204,7 +204,6 @@ class ExternalFile(
                             val writer = TrieHashTable.Writer(
                                     HashTable.ValueSize.LONG, TrieHashTable.BitmaskSize.LONG)
                             val data = writer.dumpDoubles(keys, values)
-                            logger.info("Data: ${data.asList()}")
                             val tmpPath = Files.createTempFile(dataDir, fieldName, null)
                             Files.newOutputStream(tmpPath).use {
                                 it.write(data)
