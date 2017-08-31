@@ -160,9 +160,12 @@ class ExternalFileFieldMapper(
                     .get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
             val indexUuid = context.indexSettings()
                     .get(IndexMetaData.SETTING_INDEX_UUID)
-            extFileService.addField(
-                    Index(indexName, indexUuid), name,
-                    FileSettings(valuesStoreTypeType, updateInterval, url, timeout))
+            // There is no index when putting template
+            if (indexName != null && indexUuid != null) {
+                extFileService.addField(
+                        Index(indexName, indexUuid), name,
+                        FileSettings(valuesStoreTypeType, updateInterval, url, timeout))
+            }
             setupFieldType(context)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
