@@ -214,12 +214,13 @@ class ExternalFile(
                             } finally {
                                 Files.deleteIfExists(tmpPath)
                             }
-                            logger.info("Dumped ${keys.size} values (${data.size} bytes) " +
+                            logger.debug("Dumped ${keys.size} values (${data.size} bytes) " +
                                     "into file [${indexFilePath}]")
                         }
                         val mappedData = FileChannel.open(indexFilePath, StandardOpenOption.READ).use {
                             it.map(FileChannel.MapMode.READ_ONLY, 0, it.size())
                         }
+                        logger.debug("Loaded values from file [$indexFilePath]")
                         return MappedFileValues.Provider(mappedData, fileLastModified)
                     }
                 }
