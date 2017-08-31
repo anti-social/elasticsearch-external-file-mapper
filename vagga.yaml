@@ -1,6 +1,6 @@
 _default:
   gradle-home: &gradle-home /work/.gradle
-  plugin-path: &plugin-path /work/build/distributions/external-field-mapper-0.0.1-SNAPSHOT.zip
+  plugin-path: &plugin-path /work/build/distributions/external-file-mapper-0.0.3-SNAPSHOT.zip
   cmd-opts: &cmd-opts
     container: kotlin-sdk
     user-id: 1
@@ -57,7 +57,7 @@ containers:
       ES_SKIP_SET_KERNEL_PARAMETERS: true
     - !Install
       - openjdk-8-jre-headless
-      - elasticsearch=5.5.1
+      - elasticsearch=5.5.2
     - !EnsureDir /var/elasticsearch
     volumes:
       /var/elasticsearch: !Persistent { name: elastic }
