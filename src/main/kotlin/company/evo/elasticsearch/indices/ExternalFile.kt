@@ -121,9 +121,10 @@ class ExternalFile(
     internal fun download(): Boolean {
         val requestConfigBuilder = RequestConfig.custom()
         if (settings.timeout != null) {
+            val timeout = settings.timeout * 1000
             requestConfigBuilder
-                    .setConnectTimeout(settings.timeout)
-                    .setSocketTimeout(settings.timeout)
+                    .setConnectTimeout(timeout)
+                    .setSocketTimeout(timeout)
         }
         val requestConfig = requestConfigBuilder.build()
         val client = HttpClients.custom()
