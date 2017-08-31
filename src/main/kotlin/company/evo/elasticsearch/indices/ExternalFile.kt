@@ -1,13 +1,17 @@
 package company.evo.elasticsearch.indices
 
 import java.io.IOException
+import java.net.SocketTimeoutException
 import java.nio.channels.FileChannel
+import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.FileTime
 import java.nio.file.NoSuchFileException
+
+import gnu.trove.map.hash.TLongDoubleHashMap
 
 import org.apache.http.client.config.RequestConfig
 import org.apache.http.client.methods.HttpGet
@@ -18,8 +22,6 @@ import org.elasticsearch.index.Index
 
 import net.uaprom.htable.HashTable
 import net.uaprom.htable.TrieHashTable
-import java.net.SocketTimeoutException
-import java.nio.ByteBuffer
 
 
 internal data class FileKey(
@@ -47,11 +49,11 @@ class EmptyFileValues : FileValues {
 }
 
 class MemoryFileValues(
-        private val values: Map<Long, Double>
+        private val values: TLongDoubleHashMap
 ) : FileValues {
 
     class Provider(
-            private val values: Map<Long, Double>,
+            private val values: TLongDoubleHashMap,
             private val lastModified: FileTime
     ) : FileValues.Provider {
         override fun lastModified(): FileTime? {
@@ -64,7 +66,11 @@ class MemoryFileValues(
     }
 
     override fun get(key: Long, defaultValue: Double): Double {
-        return values.getOrDefault(key, defaultValue)
+        val v = values.get(key)
+        if (v.isNaN()) {
+            return defaultValue
+        }
+        return v
     }
 
     override fun contains(key: Long): Boolean {
@@ -181,7 +187,7 @@ class ExternalFile(
                 when (settings.valuesStoreType) {
                     ValuesStoreType.RAM -> {
                         val (keys, values) = parse(extFilePath)
-                        val map = HashMap<Long, Double>(keys.size)
+                        val map = TLongDoubleHashMap(keys.size, 0.85F, -1, Double.NaN)
                         for ((ix, k) in keys.withIndex()) {
                             map.put(k, values[ix])
                         }

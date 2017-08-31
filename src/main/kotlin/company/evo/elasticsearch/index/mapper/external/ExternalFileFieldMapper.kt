@@ -65,7 +65,7 @@ class ExternalFileFieldMapper(
 
     companion object {
         const val CONTENT_TYPE = "external_file"
-        val DEFAULT_VALUES_STORE_TYPE = ValuesStoreType.FILE
+        val DEFAULT_VALUES_STORE_TYPE = ValuesStoreType.RAM
         const val DEFAULT_UPDATE_INTERVAL = 600L
         val FIELD_TYPE = ExternalFileFieldType()
 

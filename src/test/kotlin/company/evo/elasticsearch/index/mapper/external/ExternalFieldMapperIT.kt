@@ -93,7 +93,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         checkHits()
     }
 
-    fun testInMemoryValues() {
+    fun testMappedFileValues() {
         val indexName = "test"
         copyTestResources(indexName)
 
@@ -109,7 +109,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                                     .endObject()
                                     .startObject("ext_price")
                                         .field("type", "external_file")
-                                        .field("values_store_type", "ram")
+                                        .field("values_store_type", "file")
                                     .endObject()
                                 .endObject().endObject().endObject())
                 .get()
