@@ -31,16 +31,11 @@ interface FileValues {
         fun lastModified(): FileTime?
         fun get(): FileValues
     }
-    fun size(): Int
     fun get(key: Long, defaultValue: Double): Double
     fun contains(key: Long): Boolean
 }
 
 class EmptyFileValues : FileValues {
-    override fun size(): Int {
-        return 0
-    }
-
     override fun get(key: Long, defaultValue: Double): Double {
         return defaultValue
     }
@@ -67,10 +62,6 @@ class MemoryFileValues(
         }
     }
 
-    override fun size(): Int {
-        return values.size
-    }
-
     override fun get(key: Long, defaultValue: Double): Double {
         return values.getOrDefault(key, defaultValue)
     }
@@ -81,13 +72,11 @@ class MemoryFileValues(
 }
 
 class MappedFileValues(
-        private val values: HashTable.Reader,
-        private val size: Int
+        private val values: HashTable.Reader
 ) : FileValues {
 
     class Provider(
             private val data: ByteBuffer,
-            private val size: Int,
             private val lastModified: FileTime
     ) : FileValues.Provider {
         override fun lastModified(): FileTime? {
@@ -95,12 +84,8 @@ class MappedFileValues(
         }
 
         override fun get(): FileValues {
-            return MappedFileValues(TrieHashTable.Reader(data.slice()), size)
+            return MappedFileValues(TrieHashTable.Reader(data.slice()))
         }
-    }
-
-    override fun size(): Int {
-        return size
     }
 
     override fun get(key: Long, defaultValue: Double): Double {
@@ -180,12 +165,9 @@ class ExternalFile(
         try {
             val fileLastModified = Files.getLastModifiedTime(extFilePath)
             if (fileLastModified > (lastModified ?: FileTime.fromMillis(0))) {
-                val (keys, values) = parse(extFilePath)
-                logger.info("Parsed ${keys.size} values " +
-                        "for [${fieldName}] field of [${index.name}] index " +
-                        "from file [${extFilePath}]")
                 when (settings.valuesStoreType) {
                     ValuesStoreType.RAM -> {
+                        val (keys, values) = parse(extFilePath)
                         val map = HashMap<Long, Double>(keys.size)
                         for ((ix, k) in keys.withIndex()) {
                             map.put(k, values[ix])
@@ -200,6 +182,7 @@ class ExternalFile(
                             FileTime.fromMillis(0)
                         }
                         if (indexLastModified < fileLastModified) {
+                            val (keys, values) = parse(extFilePath)
                             val writer = TrieHashTable.Writer(
                                     HashTable.ValueSize.LONG, TrieHashTable.BitmaskSize.LONG)
                             val data = writer.dumpDoubles(keys, values)
@@ -214,7 +197,7 @@ class ExternalFile(
                         val mappedData = FileChannel.open(indexFilePath, StandardOpenOption.READ).use {
                             it.map(FileChannel.MapMode.READ_ONLY, 0, it.size())
                         }
-                        return MappedFileValues.Provider(mappedData, keys.size, fileLastModified)
+                        return MappedFileValues.Provider(mappedData, fileLastModified)
                     }
                 }
             }
@@ -244,6 +227,9 @@ class ExternalFile(
                 values.add(value.toDouble())
             }
         }
+        logger.info("Parsed ${keys.size} values " +
+                "for [$fieldName] field of [${index.name}] index " +
+                "from file [$path]")
         return Pair(keys.toLongArray(), values.toDoubleArray())
     }
 
