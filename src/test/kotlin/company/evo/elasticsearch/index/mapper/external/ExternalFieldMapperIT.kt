@@ -37,7 +37,7 @@ import org.hamcrest.Matchers.hasSize
 
 import org.junit.Before
 
-import company.evo.elasticsearch.plugin.mapper.ExternalMapperPlugin
+import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
 
 
 @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.TEST, numDataNodes=0)
@@ -47,7 +47,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
     lateinit var nodeDataDir: Path
 
     override fun nodePlugins(): Collection<Class<out Plugin>> {
-        return Collections.singleton(ExternalMapperPlugin::class.java)
+        return Collections.singleton(ExternalFileMapperPlugin::class.java)
     }
 
     override fun ignoreExternalCluster(): Boolean { return true }

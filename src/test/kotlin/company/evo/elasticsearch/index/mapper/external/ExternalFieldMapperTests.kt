@@ -32,7 +32,7 @@ import org.hamcrest.Matchers.containsString
 import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
-import company.evo.elasticsearch.plugin.mapper.ExternalMapperPlugin
+import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
 
 
 class ExternalFieldMapperTests : ESSingleNodeTestCase() {
@@ -48,7 +48,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
     override fun getPlugins(): Collection<Class<out Plugin>> {
         return pluginList(
                 InternalSettingsPlugin::class.java,
-                ExternalMapperPlugin::class.java)
+                ExternalFileMapperPlugin::class.java)
     }
 
     fun testDefaults() {

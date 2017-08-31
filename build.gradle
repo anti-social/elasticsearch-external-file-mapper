@@ -16,9 +16,9 @@ apply plugin: 'idea'
 apply plugin: 'elasticsearch.esplugin'
 
 esplugin {
-    name = 'external-file-mapper'
+    name = 'mapper-external-file'
     description 'External file field mapper for ElasticSearch'
-    classname = 'company.evo.elasticsearch.plugin.mapper.ExternalMapperPlugin'
+    classname = 'company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin'
 }
 
 version '0.0.3-SNAPSHOT'

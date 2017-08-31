@@ -26,10 +26,9 @@ import org.elasticsearch.plugins.Plugin
 
 import company.evo.elasticsearch.index.mapper.external.ExternalFileFieldMapper
 import company.evo.elasticsearch.indices.ExternalFileService
-import org.elasticsearch.common.component.LifecycleComponent
 
 
-class ExternalMapperPlugin : Plugin(), MapperPlugin {
+class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
 
     override fun getMappers(): Map<String, Mapper.TypeParser> {
         return Collections.singletonMap(
