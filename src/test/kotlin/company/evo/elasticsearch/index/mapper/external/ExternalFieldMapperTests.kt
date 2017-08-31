@@ -56,6 +56,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 .startObject().startObject("type")
                     .startObject("properties").startObject("ext_field")
                         .field("type", "external_file")
+                        .field("update_interval", 600)
                     .endObject().endObject()
                 .endObject().endObject().string()
         val mapper = parser.parse("type", CompressedXContent(mapping))
@@ -64,6 +65,10 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         val fields = parsedDoc.rootDoc().getFields("ext_field")
         assertNotNull(fields)
         assertEquals(Arrays.toString(fields), 0, fields.size)
+        assertEquals(
+                600L,
+                ExternalFileService.instance
+                        .getUpdateInterval(indexService.index(), "ext_field"))
     }
 
     fun testIdKeyField() {
@@ -77,6 +82,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                         .endObject()
                         .startObject("ext_field")
                             .field("type", "external_file")
+                            .field("update_interval", 600)
                             .field("key_field", "id")
                         .endObject()
                     .endObject()
@@ -113,31 +119,12 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
 //        }
 //    }
 
-    fun testUpdateInterval() {
-        val mapping = XContentFactory.jsonBuilder()
-                .startObject().startObject("type")
-                    .startObject("properties").startObject("ext_field")
-                        .field("type", "external_file")
-                        .field("update_interval", 60)
-                    .endObject().endObject()
-                .endObject().endObject().string()
-        val mapper = parser.parse("type", CompressedXContent(mapping))
-        val parsedDoc = mapper.parse("test", "type", "1",
-                XContentFactory.jsonBuilder().startObject().field("ext_field", "value").endObject().bytes())
-        val fields = parsedDoc.rootDoc().getFields("ext_field")
-        assertNotNull(fields)
-        assertEquals(Arrays.toString(fields), 0, fields.size)
-        assertEquals(
-                60L,
-                ExternalFileService.instance
-                        .getUpdateInterval(indexService.index(), "ext_field"))
-    }
-
     fun testDocValuesNotAllowed() {
         val mapping = XContentFactory.jsonBuilder()
                 .startObject().startObject("type")
                     .startObject("properties").startObject("ext_field")
                         .field("type", "external_file")
+                        .field("update_interval", 600)
                         .field("doc_values", false)
                     .endObject().endObject()
                 .endObject().endObject().string()
@@ -155,6 +142,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 .startObject().startObject("type")
                     .startObject("properties").startObject("ext_field")
                         .field("type", "external_file")
+                        .field("update_interval", 600)
                         .field("stored", true)
                     .endObject().endObject()
                 .endObject().endObject().string()

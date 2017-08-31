@@ -56,6 +56,7 @@ class ExternalFileFieldMapper(
         fieldType: MappedFieldType,
         defaultFieldType: MappedFieldType,
         indexSettings: Settings,
+        private val fileSettings: FileSettings,
         multiFields: MultiFields,
         // Do we need that argument?
         copyTo: CopyTo?
@@ -66,7 +67,6 @@ class ExternalFileFieldMapper(
     companion object {
         const val CONTENT_TYPE = "external_file"
         val DEFAULT_VALUES_STORE_TYPE = ValuesStoreType.RAM
-        const val DEFAULT_UPDATE_INTERVAL = 600L
         val FIELD_TYPE = ExternalFileFieldType()
 
         init {
@@ -88,22 +88,22 @@ class ExternalFileFieldMapper(
 
     override fun doXContentBody(builder: XContentBuilder, includeDefaults: Boolean, params: ToXContent.Params) {
         super.doXContentBody(builder, includeDefaults, params)
+        val fileSettings = fieldType().fileSettings()
+        // TODO Find out how to rid of next check
+        fileSettings ?: throw IllegalStateException("update_interval must be set")
+        builder.field("update_interval", fileSettings.updateInterval)
         if (includeDefaults || fieldType().keyFieldName() != null) {
             builder.field("key_field", fieldType().keyFieldName())
         }
-        val fileSettings = fieldType().fileSettings()
-        if (fileSettings != null) {
+        if (includeDefaults || fileSettings.valuesStoreType != DEFAULT_VALUES_STORE_TYPE) {
             builder.field("values_store_type",
                     fileSettings.valuesStoreType.toString().toLowerCase(Locale.ENGLISH))
-            if (fileSettings.updateInterval != null) {
-                builder.field("update_interval", fileSettings.updateInterval)
-            }
-            if (fileSettings.url != null) {
-                builder.field("url", fileSettings.url)
-            }
-            if (fileSettings.timeout != null) {
-                builder.field("timeout", fileSettings.timeout)
-            }
+        }
+        if (includeDefaults || fileSettings.url != null) {
+            builder.field("url", fileSettings.url)
+        }
+        if (includeDefaults || fileSettings.timeout != null) {
+            builder.field("timeout", fileSettings.timeout)
         }
     }
 
@@ -113,7 +113,7 @@ class ExternalFileFieldMapper(
                 node: MutableMap<String, Any>,
                 parserContext: Mapper.TypeParser.ParserContext): Mapper.Builder<*,*>
         {
-            val builder = Builder(name, ExternalFileService.instance)
+            val builder = Builder(name)
             val entries = node.entries.iterator()
             for ((key, value) in entries) {
                 when (key) {
@@ -145,25 +145,23 @@ class ExternalFileFieldMapper(
                     }
                 }
             }
+            if (builder.updateInterval() == null) {
+                throw MapperParsingException(
+                        "update_interval parameter must be set for field [$name]")
+            }
             return builder
         }
     }
 
     class Builder : FieldMapper.Builder<Builder, ExternalFileFieldMapper> {
 
-        private val extFileService: ExternalFileService
         private var valuesStoreType: ValuesStoreType = DEFAULT_VALUES_STORE_TYPE
-        private var updateInterval: Long = DEFAULT_UPDATE_INTERVAL
+        private var updateInterval: Long? = null
         private var url: String? = null
         private var timeout: Int? = null
 
-        constructor(
-                name: String,
-                extFileService: ExternalFileService
-        ) : super(name, FIELD_TYPE, FIELD_TYPE)
-        {
+        constructor(name: String) : super(name, FIELD_TYPE, FIELD_TYPE) {
             this.builder = this
-            this.extFileService = extFileService
         }
 
         override fun fieldType(): ExternalFileFieldType {
@@ -171,6 +169,8 @@ class ExternalFileFieldMapper(
         }
 
         override fun build(context: BuilderContext): ExternalFileFieldMapper {
+            val updateInterval = this.updateInterval
+            updateInterval ?: throw IllegalStateException("update_interval must be set")
             val indexName = context.indexSettings()
                     .get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
             val indexUuid = context.indexSettings()
@@ -178,19 +178,14 @@ class ExternalFileFieldMapper(
             val fileSettings = FileSettings(valuesStoreType, updateInterval, url, timeout)
             // There is no index when putting template
             if (indexName != null && indexUuid != null) {
-                extFileService.addField(
+                ExternalFileService.instance.addField(
                         Index(indexName, indexUuid), name, fileSettings)
             }
             setupFieldType(context)
             fieldType().setFileSettings(fileSettings)
             return ExternalFileFieldMapper(
-                    name, fieldType, defaultFieldType, context.indexSettings(),
+                    name, fieldType, defaultFieldType, context.indexSettings(), fileSettings,
                     multiFieldsBuilder.build(this, context), copyTo)
-        }
-
-        override fun setupFieldType(context: BuilderContext) {
-            super.setupFieldType(context)
-            fieldType().setExtFileService(extFileService)
         }
 
         fun keyField(keyFieldName: String): Builder {
@@ -198,9 +193,13 @@ class ExternalFileFieldMapper(
             return this
         }
 
-        fun updateInterval(interval: Long): Builder {
-            this.updateInterval = interval
+        fun updateInterval(updateInterval: Long): Builder {
+            this.updateInterval = updateInterval
             return this
+        }
+
+        fun updateInterval(): Long? {
+            return updateInterval
         }
 
         fun valuesStoreType(valuesStoreType: ValuesStoreType): Builder {
@@ -220,7 +219,6 @@ class ExternalFileFieldMapper(
     }
 
     class ExternalFileFieldType : MappedFieldType {
-        private var extFileService: ExternalFileService? = null
         private var keyFieldName: String? = null
         private var fileSettings: FileSettings? = null
 
@@ -249,10 +247,6 @@ class ExternalFileFieldMapper(
             return Objects.hash(super.hashCode(), keyFieldName, fileSettings)
         }
 
-        fun setExtFileService(extFileService: ExternalFileService) {
-            this.extFileService = extFileService
-        }
-
         fun keyFieldName(): String? {
             return keyFieldName
         }
@@ -261,12 +255,12 @@ class ExternalFileFieldMapper(
             this.keyFieldName = keyFieldName
         }
 
-        fun setFileSettings(fileSettings: FileSettings) {
-            this.fileSettings = fileSettings
-        }
-
         fun fileSettings(): FileSettings? {
             return fileSettings
+        }
+
+        fun setFileSettings(fileSettings: FileSettings) {
+            this.fileSettings = fileSettings
         }
 
         override fun typeName(): String {
@@ -278,7 +272,6 @@ class ExternalFileFieldMapper(
         }
 
         override fun fielddataBuilder(): IndexFieldData.Builder {
-            val extFileService = this.extFileService
             return IndexFieldData.Builder {
                 indexSettings, _, cache, breakerService, mapperService ->
 
@@ -296,10 +289,7 @@ class ExternalFileFieldMapper(
                 }
                 val keyFieldData = keyFieldType.fielddataBuilder().build(
                         indexSettings, keyFieldType, cache, breakerService, mapperService)
-                if (extFileService == null) {
-                    throw IllegalArgumentException("Missing external file service")
-                }
-                val values = extFileService.getValues(indexSettings.index, name())
+                val values = ExternalFileService.instance.getValues(indexSettings.index, name())
                 ExternalFileFieldData(
                         name(), indexSettings.index, keyFieldData, values)
             }
