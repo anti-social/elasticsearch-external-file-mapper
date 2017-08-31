@@ -18,6 +18,8 @@ package company.evo.elasticsearch.plugin.mapper
 
 import java.util.Collections
 
+import org.elasticsearch.common.inject.AbstractModule
+import org.elasticsearch.common.inject.Module
 import org.elasticsearch.index.mapper.Mapper
 import org.elasticsearch.plugins.MapperPlugin
 import org.elasticsearch.plugins.Plugin
@@ -35,9 +37,13 @@ class ExternalMapperPlugin : Plugin(), MapperPlugin {
                 ExternalFileFieldMapper.TypeParser())
     }
 
-    // TODO Use createComponents method when updating Elasticsearch to 6.0
+    // TODO Override createComponents method when updating Elasticsearch to 6.0
     // we need NodeEnvironment instance to get node data paths
-    override fun getGuiceServiceClasses(): Collection<Class<out LifecycleComponent>> {
-        return Collections.singleton(ExternalFileService::class.java)
+    override fun createGuiceModules(): Collection<Module> {
+        return Collections.singleton(object : AbstractModule() {
+            override fun configure() {
+                bind(ExternalFileService::class.java).asEagerSingleton()
+            }
+        })
     }
 }

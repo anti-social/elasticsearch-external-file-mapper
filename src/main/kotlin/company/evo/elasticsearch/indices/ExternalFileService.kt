@@ -38,7 +38,6 @@ class ExternalFileService : AbstractLifecycleComponent {
     companion object {
         val EMPTY_FILE_VALUES: FileValues = EmptyFileValues()
         lateinit var instance: ExternalFileService
-        var started: Boolean = false
     }
 
     private data class UpdateTask(
@@ -47,24 +46,18 @@ class ExternalFileService : AbstractLifecycleComponent {
     )
 
     @Inject
-    constructor(
+    internal constructor(
             settings: Settings,
             threadPool: ThreadPool,
             nodeEnv: NodeEnvironment) : super(settings) {
         this.nodeDir = nodeEnv.nodeDataPaths()[0]
         this.threadPool = threadPool
-    }
-
-    override public fun doStart() {
-        if (started) {
-            throw IllegalStateException("Already started")
-        }
         instance = this
     }
 
-    override public fun doStop() {
-        started = false
-    }
+    override public fun doStart() {}
+
+    override public fun doStop() {}
 
     override fun doClose() {}
 

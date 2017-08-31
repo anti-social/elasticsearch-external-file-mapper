@@ -16,19 +16,13 @@
 
 package company.evo.elasticsearch.index.mapper.external
 
-import java.nio.file.Files
 import java.util.Arrays
-import java.util.Collections
 
 import org.elasticsearch.common.compress.CompressedXContent
-import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.XContentFactory
-import org.elasticsearch.env.Environment
 import org.elasticsearch.index.IndexService
 import org.elasticsearch.index.mapper.DocumentMapperParser
-import org.elasticsearch.index.mapper.Mapper.TypeParser
 import org.elasticsearch.index.mapper.MapperParsingException
-import org.elasticsearch.indices.mapper.MapperRegistry
 import org.elasticsearch.plugins.Plugin
 import org.elasticsearch.test.ESSingleNodeTestCase
 import org.elasticsearch.test.InternalSettingsPlugin
@@ -39,26 +33,16 @@ import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
 import company.evo.elasticsearch.plugin.mapper.ExternalMapperPlugin
-import org.junit.Assert
-import java.io.PrintWriter
-import java.nio.file.StandardOpenOption
 
 
 class ExternalFieldMapperTests : ESSingleNodeTestCase() {
 
     lateinit var indexService: IndexService
-    lateinit var extFileService: ExternalFileService
     lateinit var parser: DocumentMapperParser
 
     @Before fun setup() {
         indexService = createIndex("test")
-        val nodeSettings = Settings.builder()
-                .put(Environment.PATH_HOME_SETTING.key, createTempDir())
-                .build()
         parser = indexService.mapperService().documentMapperParser()
-        extFileService = ExternalFileService(
-                nodeSettings, indexService.threadPool, node().nodeEnvironment)
-        extFileService.doStart()
     }
 
     override fun getPlugins(): Collection<Class<out Plugin>> {
@@ -143,7 +127,10 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         val fields = parsedDoc.rootDoc().getFields("ext_field")
         assertNotNull(fields)
         assertEquals(Arrays.toString(fields), 0, fields.size)
-        assertEquals(60L, extFileService.getUpdateInterval(indexService.index(), "ext_field"))
+        assertEquals(
+                60L,
+                ExternalFileService.instance
+                        .getUpdateInterval(indexService.index(), "ext_field"))
     }
 
     fun testDocValuesNotAllowed() {

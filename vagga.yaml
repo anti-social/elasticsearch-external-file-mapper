@@ -155,6 +155,7 @@ commands:
       /usr/share/elasticsearch/plugins: !Tmpfs
     environ:
       PLUGIN_PATH: *plugin-path
+    prerequisites: [assemble]
     run: |
       set -e
       /usr/share/elasticsearch/bin/elasticsearch-plugin install file:${PLUGIN_PATH}
