@@ -31,6 +31,7 @@ dependencies {
     compile "org.jetbrains.kotlin:kotlin-stdlib"
     compile "org.apache.httpcomponents:httpcore:${versions.httpcore}"
     compile "org.apache.httpcomponents:httpclient:${versions.httpclient}"
+    compile "commons-logging:commons-logging:${versions.commonslogging}"
     compile project(':htable-java')
 }
 

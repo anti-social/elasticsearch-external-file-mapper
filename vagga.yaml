@@ -162,4 +162,5 @@ commands:
       /usr/share/elasticsearch/bin/elasticsearch \
         -E path.conf=/etc/elasticsearch \
         -E path.logs=/var/elasticsearch/logs \
-        -E path.data=/var/elasticsearch/data
+        -E path.data=/var/elasticsearch/data \
+        -E logger.company.evo.elasticsearch=debug

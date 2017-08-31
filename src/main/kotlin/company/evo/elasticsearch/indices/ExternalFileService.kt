@@ -63,6 +63,7 @@ class ExternalFileService : AbstractLifecycleComponent {
 
     @Synchronized
     fun addField(index: Index, fieldName: String, fileSettings: FileSettings) {
+        logger.debug("Adding external file field: [${index.name}] [$fieldName]")
         val extFile = ExternalFile(this.nodeDir, index, fieldName, fileSettings)
         val key = FileKey(index.name, fieldName)
         this.values.computeIfAbsent(key) {
@@ -70,18 +71,23 @@ class ExternalFileService : AbstractLifecycleComponent {
         }
         val existingTask = this.tasks[key]
         if (existingTask != null && existingTask.settings != fileSettings) {
+            logger.debug("Cancelling update task: [${index.name}] [$fieldName]")
             existingTask.future.cancel()
             this.tasks.remove(key)
         }
         val task = this.tasks.getOrPut(key) {
+            logger.debug("Scheduling update task every " +
+                    "${fileSettings.updateInterval} seconds: [${index.name}] [$fieldName]")
             val future = threadPool.scheduleWithFixedDelay(
                     {
+                        logger.debug("Started updating: [${index.name}] [$fieldName]")
                         if (fileSettings.url != null) {
                             extFile.download()
                         }
                         this.values.compute(key) { _, v ->
                             extFile.loadValues(v?.lastModified())
                         }
+                        logger.debug("Finished updating: [${index.name}] [$fieldName]")
                     },
                     TimeValue.timeValueSeconds(fileSettings.updateInterval),
                     ThreadPool.Names.SAME)

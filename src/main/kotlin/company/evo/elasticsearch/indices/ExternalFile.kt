@@ -18,6 +18,7 @@ import org.elasticsearch.index.Index
 
 import net.uaprom.htable.HashTable
 import net.uaprom.htable.TrieHashTable
+import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 
 
@@ -115,7 +116,7 @@ class ExternalFile(
         private val fieldName: String,
         private val settings: FileSettings)
 {
-    private val logger = Loggers.getLogger(ExternalFileService::class.java)
+    private val logger = Loggers.getLogger(ExternalFile::class.java)
 
     internal fun download(): Boolean {
         val requestConfigBuilder = RequestConfig.custom()
@@ -133,31 +134,42 @@ class ExternalFile(
         if (ver != null) {
             httpGet.addHeader("If-Modified-Since", ver)
         }
-        val resp = client.execute(httpGet)
-        resp.use {
-            when (resp.statusLine.statusCode) {
-                304 -> return false
-                200 -> {
-                    val lastModified = resp.getLastHeader("Last-Modified").value
-                    if (resp.entity == null) {
-                        logger.warn("Missing content when downloading [${settings.url}]")
+        try {
+            val resp = client.execute(httpGet)
+            resp.use {
+                when (resp.statusLine.statusCode) {
+                    304 -> return false
+                    200 -> {
+                        val lastModified = resp.getLastHeader("Last-Modified").value
+                        if (resp.entity == null) {
+                            logger.warn("Missing content when downloading [${settings.url}]")
+                            return false
+                        }
+                        val tmpPath = Files.createTempFile(
+                                getExternalFileDir(), fieldName, null)
+                        try {
+                            resp.entity?.content?.use { inStream ->
+                                Files.copy(inStream, tmpPath, StandardCopyOption.REPLACE_EXISTING)
+                                Files.move(tmpPath, getExternalFilePath(), StandardCopyOption.ATOMIC_MOVE)
+                            }
+                        } finally {
+                            Files.deleteIfExists(tmpPath)
+                        }
+                        updateVersion(lastModified)
+                        return true
+                    }
+                    else -> {
+                        logger.warn("Failed to download [${settings.url}] with status: ${resp.statusLine}")
                         return false
                     }
-                    val tmpPath = Files.createTempFile(
-                            getExternalFileDir(), fieldName, null)
-                    resp.entity?.content?.use { inStream ->
-                        Files.copy(inStream, tmpPath, StandardCopyOption.REPLACE_EXISTING)
-                        Files.move(tmpPath, getExternalFilePath(), StandardCopyOption.ATOMIC_MOVE)
-                    }
-                    updateVersion(lastModified)
-                    return true
-                }
-                else -> {
-                    logger.warn("Failed to download [${settings.url}] with status: ${resp.statusLine}")
-                    return false
                 }
             }
+        } catch (e: SocketTimeoutException) {
+            logger.warn("Timeout when downloading [${settings.url}]: $e")
+        } catch (e: IOException) {
+            logger.warn("IO error when downloading [${settings.url}]: $e")
         }
+        return false
     }
 
     internal fun loadValues(lastModified: FileTime?): FileValues.Provider? {
@@ -187,10 +199,14 @@ class ExternalFile(
                                     HashTable.ValueSize.LONG, TrieHashTable.BitmaskSize.LONG)
                             val data = writer.dumpDoubles(keys, values)
                             val tmpPath = Files.createTempFile(dataDir, fieldName, null)
-                            Files.newOutputStream(tmpPath).use {
-                                it.write(data)
+                            try {
+                                Files.newOutputStream(tmpPath).use {
+                                    it.write(data)
+                                }
+                                Files.move(tmpPath, indexFilePath, StandardCopyOption.ATOMIC_MOVE)
+                            } finally {
+                                Files.deleteIfExists(tmpPath)
                             }
-                            Files.move(tmpPath, indexFilePath, StandardCopyOption.ATOMIC_MOVE)
                             logger.info("Dumped ${keys.size} values (${data.size} bytes) " +
                                     "into file [${indexFilePath}]")
                         }
