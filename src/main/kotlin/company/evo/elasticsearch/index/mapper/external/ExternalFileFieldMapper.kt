@@ -17,6 +17,7 @@
 package company.evo.elasticsearch.index.mapper.external
 
 import java.util.Locale
+import java.util.Objects
 
 import org.apache.lucene.index.IndexableField
 import org.apache.lucene.index.IndexOptions
@@ -90,6 +91,20 @@ class ExternalFileFieldMapper(
         if (includeDefaults || fieldType().keyFieldName() != null) {
             builder.field("key_field", fieldType().keyFieldName())
         }
+        val fileSettings = fieldType().fileSettings()
+        if (fileSettings != null) {
+            builder.field("values_store_type",
+                    fileSettings.valuesStoreType.toString().toLowerCase(Locale.ENGLISH))
+            if (fileSettings.updateInterval != null) {
+                builder.field("update_interval", fileSettings.updateInterval)
+            }
+            if (fileSettings.url != null) {
+                builder.field("url", fileSettings.url)
+            }
+            if (fileSettings.timeout != null) {
+                builder.field("timeout", fileSettings.timeout)
+            }
+        }
     }
 
     class TypeParser : Mapper.TypeParser {
@@ -137,7 +152,7 @@ class ExternalFileFieldMapper(
     class Builder : FieldMapper.Builder<Builder, ExternalFileFieldMapper> {
 
         private val extFileService: ExternalFileService
-        private var valuesStoreTypeType: ValuesStoreType = DEFAULT_VALUES_STORE_TYPE
+        private var valuesStoreType: ValuesStoreType = DEFAULT_VALUES_STORE_TYPE
         private var updateInterval: Long = DEFAULT_UPDATE_INTERVAL
         private var url: String? = null
         private var timeout: Int? = null
@@ -160,13 +175,14 @@ class ExternalFileFieldMapper(
                     .get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
             val indexUuid = context.indexSettings()
                     .get(IndexMetaData.SETTING_INDEX_UUID)
+            val fileSettings = FileSettings(valuesStoreType, updateInterval, url, timeout)
             // There is no index when putting template
             if (indexName != null && indexUuid != null) {
                 extFileService.addField(
-                        Index(indexName, indexUuid), name,
-                        FileSettings(valuesStoreTypeType, updateInterval, url, timeout))
+                        Index(indexName, indexUuid), name, fileSettings)
             }
             setupFieldType(context)
+            fieldType().setFileSettings(fileSettings)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
                     multiFieldsBuilder.build(this, context), copyTo)
@@ -187,8 +203,8 @@ class ExternalFileFieldMapper(
             return this
         }
 
-        fun valuesStoreType(valuesStoreTypeType: ValuesStoreType): Builder {
-            this.valuesStoreTypeType = valuesStoreTypeType
+        fun valuesStoreType(valuesStoreType: ValuesStoreType): Builder {
+            this.valuesStoreType = valuesStoreType
             return this
         }
 
@@ -206,10 +222,31 @@ class ExternalFileFieldMapper(
     class ExternalFileFieldType : MappedFieldType {
         private var extFileService: ExternalFileService? = null
         private var keyFieldName: String? = null
+        private var fileSettings: FileSettings? = null
 
         constructor()
         private constructor(ref: ExternalFileFieldType) : super(ref) {
             this.keyFieldName = ref.keyFieldName
+            this.fileSettings = ref.fileSettings
+        }
+
+        override fun clone(): ExternalFileFieldType {
+            return ExternalFileFieldType(this)
+        }
+
+        override fun equals(other: Any?): Boolean {
+            if (!super.equals(other)) {
+                return false
+            }
+            if (other is ExternalFileFieldType) {
+                return other.keyFieldName == keyFieldName &&
+                        other.fileSettings == fileSettings
+            }
+            return false
+        }
+
+        override fun hashCode(): Int {
+            return Objects.hash(super.hashCode(), keyFieldName, fileSettings)
         }
 
         fun setExtFileService(extFileService: ExternalFileService) {
@@ -224,12 +261,16 @@ class ExternalFileFieldMapper(
             this.keyFieldName = keyFieldName
         }
 
-        override fun typeName(): String {
-            return CONTENT_TYPE
+        fun setFileSettings(fileSettings: FileSettings) {
+            this.fileSettings = fileSettings
         }
 
-        override fun clone(): ExternalFileFieldType {
-            return ExternalFileFieldType(this)
+        fun fileSettings(): FileSettings? {
+            return fileSettings
+        }
+
+        override fun typeName(): String {
+            return CONTENT_TYPE
         }
 
         override fun termQuery(value: Any, context: QueryShardContext): Query {
