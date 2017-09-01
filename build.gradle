@@ -21,7 +21,11 @@ esplugin {
     classname = 'company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin'
 }
 
-version '0.0.4'
+project.version = project.file('project.version')
+        .newDataInputStream()
+        .newReader()
+        .readLine()
+        .toUpperCase()
 
 repositories {
     mavenCentral()

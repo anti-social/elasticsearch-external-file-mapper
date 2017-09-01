@@ -1,6 +1,5 @@
 _default:
   gradle-home: &gradle-home /work/.gradle
-  plugin-path: &plugin-path /work/build/distributions/mapper-external-file-0.0.4.zip
   cmd-opts: &cmd-opts
     container: kotlin-sdk
     user-id: 1
@@ -154,10 +153,12 @@ commands:
     volumes:
       /usr/share/elasticsearch/plugins: !Tmpfs
     environ:
-      PLUGIN_PATH: *plugin-path
+
     prerequisites: [assemble]
     run: |
       set -e
+      DISTRIBUTION_DIR=/work/build/distributions
+      PLUGIN_PATH=$DISTRIBUTION_DIR/mapper-external-file-$(cat /work/project.version).zip
       /usr/share/elasticsearch/bin/elasticsearch-plugin install file:${PLUGIN_PATH}
       /usr/share/elasticsearch/bin/elasticsearch \
         -E path.conf=/etc/elasticsearch \
