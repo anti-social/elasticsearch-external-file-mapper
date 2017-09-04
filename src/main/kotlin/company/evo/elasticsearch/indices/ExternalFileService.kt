@@ -38,7 +38,8 @@ class ExternalFileService : AbstractLifecycleComponent {
     private val nodeDir: Path
     private val threadPool: ThreadPool
     private val files = HashMap<FileKey, ExternalFileField>()
-    private val values: MutableMap<FileKey, FileValues.Provider?> = ConcurrentHashMap()
+    // TODO Eliminate nullability of the value type
+    private val values = ConcurrentHashMap<FileKey, FileValues.Provider?>()
 
     companion object {
         val EXTERNAL_DIR_NAME = "external_files"
@@ -82,7 +83,7 @@ class ExternalFileService : AbstractLifecycleComponent {
                 existingFileField.file.loadValues(null)
             }
         }
-        this.files.getOrPut(key) {
+        this.files.computeIfAbsent(key) {
             val extDir = getDirForIndex(index)
             Files.createDirectories(extDir)
             val extFile = ExternalFile(
