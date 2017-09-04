@@ -35,7 +35,6 @@ import org.elasticsearch.index.IndexService
 
 
 class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
-    val logger = org.elasticsearch.common.logging.Loggers.getLogger(ExternalFileMapperPlugin::class.java)
 
     override fun getMappers(): Map<String, Mapper.TypeParser> {
         return Collections.singletonMap(
