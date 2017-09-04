@@ -232,6 +232,56 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         checkHits()
     }
 
+    fun testDeleteIndex() {
+        val indexName = "test"
+        copyTestResources(indexName)
+
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .get()
+        // External files should be cleaned up when deleting index
+        client().admin()
+                .indices()
+                .prepareDelete(indexName)
+                .get()
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .addMapping(
+                        "product",
+                        jsonBuilder()
+                        .startObject().startObject("product").startObject("properties")
+                            .startObject("name")
+                                .field("type", "text")
+                            .endObject()
+                            .startObject("ext_price")
+                                .field("type", "external_file")
+                                .field("update_interval", 600)
+                            .endObject()
+                        .endObject().endObject().endObject())
+                .get()
+
+        indexTestDocuments(indexName)
+
+        val response = client().search(
+                searchRequest()
+                        .source(
+                                searchSource()
+                                        .query(functionScoreQuery(
+                                                fieldValueFactorFunction("ext_price")
+                                                        .missing(0.0)))
+                                        .explain(false)))
+                .actionGet()
+        assertNoFailures(response)
+        val hits = response.hits
+        assertThat(hits.hits.size, equalTo(4))
+        assertThat(hits.getAt(0).score, equalTo(0.0f))
+        assertThat(hits.getAt(1).score, equalTo(0.0f))
+        assertThat(hits.getAt(2).score, equalTo(0.0f))
+        assertThat(hits.getAt(3).score, equalTo(0.0f))
+    }
+
     private fun copyTestResources(indexName: String) {
         val extFilePath = nodeDataDir
                 .resolve("external_files")
