@@ -16,15 +16,20 @@
 
 package company.evo.elasticsearch.indices
 
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
+import org.apache.lucene.util.IOUtils
+
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.inject.Inject
+import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.env.NodeEnvironment
 import org.elasticsearch.index.Index
+import org.elasticsearch.indices.cluster.IndicesClusterStateService.AllocatedIndices.IndexRemovalReason
 import org.elasticsearch.threadpool.ThreadPool
 
 
@@ -32,17 +37,18 @@ class ExternalFileService : AbstractLifecycleComponent {
 
     private val nodeDir: Path
     private val threadPool: ThreadPool
+    private val files = HashMap<FileKey, ExternalFileField>()
     private val values: MutableMap<FileKey, FileValues.Provider?> = ConcurrentHashMap()
-    private val tasks: MutableMap<FileKey, UpdateTask> = HashMap()
 
     companion object {
+        val EXTERNAL_DIR_NAME = "external_files"
         val EMPTY_FILE_VALUES: FileValues = EmptyFileValues()
         lateinit var instance: ExternalFileService
     }
 
-    private data class UpdateTask(
-            val future: ThreadPool.Cancellable,
-            val settings: FileSettings
+    private data class ExternalFileField(
+            val file: ExternalFile,
+            var task: ThreadPool.Cancellable?
     )
 
     @Inject
@@ -64,18 +70,25 @@ class ExternalFileService : AbstractLifecycleComponent {
     @Synchronized
     fun addField(index: Index, fieldName: String, fileSettings: FileSettings) {
         logger.debug("Adding external file field: [${index.name}] [$fieldName]")
-        val extFile = ExternalFile(this.nodeDir, index, fieldName, fileSettings)
         val key = FileKey(index.name, fieldName)
-        this.values.computeIfAbsent(key) {
-            extFile.loadValues(null)
+        val existingFileField = this.files[key]
+        if (existingFileField != null) {
+            if (existingFileField.file.settings != fileSettings) {
+                logger.debug("Cancelling update task: [${index.name}] [$fieldName]")
+                existingFileField.task?.cancel()
+                existingFileField.task = null
+            }
+            this.values.computeIfAbsent(key) {
+                existingFileField.file.loadValues(null)
+            }
         }
-        val existingTask = this.tasks[key]
-        if (existingTask != null && existingTask.settings != fileSettings) {
-            logger.debug("Cancelling update task: [${index.name}] [$fieldName]")
-            existingTask.future.cancel()
-            this.tasks.remove(key)
-        }
-        val task = this.tasks.getOrPut(key) {
+        this.files.getOrPut(key) {
+            val extDir = getDirForIndex(index)
+            Files.createDirectories(extDir)
+            val extFile = ExternalFile(
+                    extDir, fieldName, index.name, fileSettings,
+                    Loggers.getLogger(ExternalFile::class.java)
+            )
             logger.debug("Scheduling update task every " +
                     "${fileSettings.updateInterval} seconds: [${index.name}] [$fieldName]")
             val future = threadPool.scheduleWithFixedDelay(
@@ -91,15 +104,31 @@ class ExternalFileService : AbstractLifecycleComponent {
                     },
                     TimeValue.timeValueSeconds(fileSettings.updateInterval),
                     ThreadPool.Names.SAME)
-            UpdateTask(future, fileSettings)
+            ExternalFileField(extFile, future)
         }
-        this.tasks.put(key, task)
+    }
+
+    @Synchronized
+    fun removeIndex(index: Index, reason: IndexRemovalReason) {
+        for ((key, fileField) in this.files) {
+            if (key.indexName != index.name) {
+                continue
+            }
+            fileField.task?.cancel()
+            this.files.remove(key)
+            this.values.remove(key)
+        }
+        // FIXME Possibly we also should clean up external files on NO_LONGER_ASSIGNED
+        // In other case external files are not deleted if closed index was deleted
+        if (reason == IndexRemovalReason.DELETED) {
+            IOUtils.rm(getDirForIndex(index))
+        }
     }
 
     @Synchronized
     internal fun getUpdateInterval(index: Index, fieldName: String): Long? {
         val key = FileKey(index.name, fieldName)
-        return this.tasks[key]?.settings?.updateInterval
+        return this.files[key]?.file?.settings?.updateInterval
     }
 
     fun getValues(index: Index, fieldName: String): FileValues {
@@ -109,5 +138,11 @@ class ExternalFileService : AbstractLifecycleComponent {
     fun getValues(indexName: String, fieldName: String): FileValues {
         val key = FileKey(indexName, fieldName)
         return this.values[key]?.get() ?: EMPTY_FILE_VALUES
+    }
+
+    private fun getDirForIndex(index: Index): Path {
+        return this.nodeDir
+                .resolve(EXTERNAL_DIR_NAME)
+                .resolve(index.name)
     }
 }

@@ -24,8 +24,8 @@ class ExternalFileTestCase : Assert() {
         val fileUrl = "http://localhost:8080/ext_price.txt"
         val fileUpdater = ExternalFile(
                 this.tempFolder.root.toPath(),
-                Index(indexName, "_na_"),
                 fieldName,
+                indexName,
                 FileSettings(ValuesStoreType.RAM, 60, fileUrl, null))
 
         var downloaded = fileUpdater.download()
@@ -53,8 +53,8 @@ class ExternalFileTestCase : Assert() {
         val fileUrl = "http://localhost:8080/ext_price.txt"
         val fileUpdater = ExternalFile(
                 this.tempFolder.root.toPath(),
-                Index(indexName, "_na_"),
                 fieldName,
+                indexName,
                 FileSettings(ValuesStoreType.FILE,60, fileUrl, null))
 
         var downloaded = fileUpdater.download()

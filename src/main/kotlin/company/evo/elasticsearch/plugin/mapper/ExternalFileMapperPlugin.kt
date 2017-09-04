@@ -20,12 +20,18 @@ import java.util.Collections
 
 import org.elasticsearch.common.inject.AbstractModule
 import org.elasticsearch.common.inject.Module
+import org.elasticsearch.index.Index
+import org.elasticsearch.index.IndexModule
+import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.index.mapper.Mapper
+import org.elasticsearch.index.shard.IndexEventListener
+import org.elasticsearch.indices.cluster.IndicesClusterStateService.AllocatedIndices.IndexRemovalReason
 import org.elasticsearch.plugins.MapperPlugin
 import org.elasticsearch.plugins.Plugin
 
 import company.evo.elasticsearch.index.mapper.external.ExternalFileFieldMapper
 import company.evo.elasticsearch.indices.ExternalFileService
+import org.elasticsearch.index.IndexService
 
 
 class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
@@ -43,6 +49,17 @@ class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
         return Collections.singleton(object : AbstractModule() {
             override fun configure() {
                 bind(ExternalFileService::class.java).asEagerSingleton()
+            }
+        })
+    }
+
+    override fun onIndexModule(indexModule: IndexModule) {
+        indexModule.addIndexEventListener(object : IndexEventListener {
+            override fun afterIndexRemoved(
+                    index: Index,
+                    indexSettings: IndexSettings,
+                    reason: IndexRemovalReason) {
+                ExternalFileService.instance.removeIndex(index, reason)
             }
         })
     }

@@ -17,8 +17,8 @@ import org.apache.http.client.config.RequestConfig
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.impl.client.HttpClients
 
-import org.elasticsearch.common.logging.Loggers
-import org.elasticsearch.index.Index
+import org.apache.logging.log4j.Logger
+import org.apache.logging.log4j.LogManager
 
 import net.uaprom.htable.HashTable
 import net.uaprom.htable.TrieHashTable
@@ -117,14 +117,16 @@ data class FileSettings(
 )
 
 class ExternalFile(
-        private val dataDir: Path,
-        private val index: Index,
-        private val fieldName: String,
-        private val settings: FileSettings)
+        private val dir: Path,
+        private val name: String,
+        private val indexName: String,
+        val settings: FileSettings,
+        private val logger: Logger)
 {
-    private val logger = Loggers.getLogger(ExternalFile::class.java)
+    constructor(dir: Path, name: String, indexName: String, settings: FileSettings) :
+            this(dir, name, indexName, settings, LogManager.getLogger(ExternalFile::class.java))
 
-    internal fun download(): Boolean {
+    fun download(): Boolean {
         val requestConfigBuilder = RequestConfig.custom()
         if (settings.timeout != null) {
             val timeout = settings.timeout * 1000
@@ -152,8 +154,7 @@ class ExternalFile(
                             logger.warn("Missing content when downloading [${settings.url}]")
                             return false
                         }
-                        val tmpPath = Files.createTempFile(
-                                getExternalFileDir(), fieldName, null)
+                        val tmpPath = Files.createTempFile(dir, name, null)
                         try {
                             resp.entity?.content?.use { inStream ->
                                 Files.copy(inStream, tmpPath, StandardCopyOption.REPLACE_EXISTING)
@@ -179,7 +180,7 @@ class ExternalFile(
         return false
     }
 
-    internal fun loadValues(lastModified: FileTime?): FileValues.Provider? {
+    fun loadValues(lastModified: FileTime?): FileValues.Provider? {
         val extFilePath = getExternalFilePath()
         try {
             val fileLastModified = Files.getLastModifiedTime(extFilePath)
@@ -205,7 +206,7 @@ class ExternalFile(
                             val writer = TrieHashTable.Writer(
                                     HashTable.ValueSize.LONG, TrieHashTable.BitmaskSize.LONG)
                             val data = writer.dumpDoubles(keys, values)
-                            val tmpPath = Files.createTempFile(dataDir, fieldName, null)
+                            val tmpPath = Files.createTempFile(dir, name, null)
                             try {
                                 Files.newOutputStream(tmpPath).use {
                                     it.write(data)
@@ -252,7 +253,7 @@ class ExternalFile(
             }
         }
         logger.info("Parsed ${keys.size} values " +
-                "for [$fieldName] field of [${index.name}] index " +
+                "for [$name] field of [${indexName}] index " +
                 "from file [$path]")
         return Pair(keys.toLongArray(), values.toDoubleArray())
     }
@@ -282,27 +283,15 @@ class ExternalFile(
         }
     }
 
-    internal fun getExternalFileDir(): Path {
-        val dir = dataDir
-                .resolve("external_files")
-                .resolve(index.name)
-        // TODO Move that into constructor
-        Files.createDirectories(dir)
-        return dir
-    }
-
     internal fun getExternalFilePath(): Path {
-        return getExternalFileDir()
-                .resolve(fieldName + ".txt")
+        return dir.resolve("$name.txt")
     }
 
     internal fun getVersionFilePath(): Path {
-        return getExternalFileDir()
-                .resolve(fieldName + ".ver")
+        return dir.resolve("$name.ver")
     }
 
     internal fun getBinaryFilePath(): Path {
-        return getExternalFileDir()
-                .resolve(fieldName + ".amt")
+        return dir.resolve("$name.amt")
     }
 }
