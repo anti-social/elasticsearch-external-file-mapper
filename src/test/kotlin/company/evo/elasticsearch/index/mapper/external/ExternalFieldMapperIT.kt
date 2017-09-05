@@ -29,11 +29,11 @@ import org.elasticsearch.plugins.Plugin
 import org.elasticsearch.index.query.QueryBuilders.functionScoreQuery
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders.fieldValueFactorFunction
 import org.elasticsearch.search.builder.SearchSourceBuilder.searchSource
+import org.elasticsearch.search.sort.SortOrder
 import org.elasticsearch.test.ESIntegTestCase
-import org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertNoFailures
+import org.elasticsearch.test.hamcrest.ElasticsearchAssertions.*
 
-import org.hamcrest.Matchers.equalTo
-import org.hamcrest.Matchers.hasSize
+import org.hamcrest.Matchers.*
 
 import org.junit.Before
 
@@ -92,6 +92,43 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         indexTestDocuments(indexName)
 
         checkHits()
+    }
+
+    fun testSorting() {
+        val indexName = "test"
+        copyTestResources(indexName)
+
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .addMapping(
+                        "product",
+                        jsonBuilder()
+                                .startObject().startObject("product").startObject("properties")
+                                    .startObject("name")
+                                        .field("type", "text")
+                                    .endObject()
+                                    .startObject("ext_price")
+                                        .field("type", "external_file")
+                                        .field("update_interval", 600)
+                                    .endObject()
+                                .endObject().endObject().endObject())
+                .get()
+
+        indexTestDocuments(indexName)
+
+        val response = client().search(
+                searchRequest()
+                        .source(
+                                searchSource()
+                                        .sort("ext_price", SortOrder.DESC)
+                                        .explain(false)))
+                .actionGet()
+        assertNoFailures(response)
+        val hits = response.hits
+        assertThat(hits.hits.size, equalTo(4))
+        assertSearchHits(response, "3", "2", "1", "4")
+        assertSortValues(response, arrayOf(1.3), arrayOf(1.2), arrayOf(1.1), arrayOf(Double.NEGATIVE_INFINITY))
     }
 
     fun testMappedFileValues() {

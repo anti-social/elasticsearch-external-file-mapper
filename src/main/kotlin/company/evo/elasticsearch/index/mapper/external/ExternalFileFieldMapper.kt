@@ -49,6 +49,7 @@ import company.evo.elasticsearch.indices.ExternalFileService
 import company.evo.elasticsearch.indices.FileSettings
 import company.evo.elasticsearch.indices.FileValues
 import company.evo.elasticsearch.indices.ValuesStoreType
+import org.elasticsearch.index.fielddata.fieldcomparator.DoubleValuesComparatorSource
 
 
 class ExternalFileFieldMapper(
@@ -438,9 +439,10 @@ class ExternalFileFieldMapper(
 
         override fun sortField(
                 missingValue: Any?, sortMode: MultiValueMode,
-                nested: IndexFieldData.XFieldComparatorSource.Nested, reverse: Boolean): SortField
+                nested: IndexFieldData.XFieldComparatorSource.Nested?, reverse: Boolean): SortField
         {
-            throw UnsupportedOperationException("sortField: not implemented")
+            val source = DoubleValuesComparatorSource(this, missingValue, sortMode, nested)
+            return SortField(fieldName, source, reverse)
         }
 
         override fun clear() {}
