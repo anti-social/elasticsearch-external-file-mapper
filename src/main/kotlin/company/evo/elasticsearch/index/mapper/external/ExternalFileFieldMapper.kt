@@ -396,7 +396,7 @@ class ExternalFileFieldMapper(
             }
 
             override fun getLongValues(): SortedNumericDocValues {
-                throw UnsupportedOperationException("getLongValues: not implemented")
+                return FieldData.castToLong(doubleValues)
             }
 
             override fun getScriptValues(): ScriptDocValues.Doubles {
@@ -404,10 +404,11 @@ class ExternalFileFieldMapper(
             }
 
             override fun getBytesValues(): SortedBinaryDocValues {
-                throw UnsupportedOperationException("getBytesValues: not implemented")
+                return FieldData.toString(doubleValues)
             }
 
             override fun ramBytesUsed(): Long {
+                // TODO Calculate ram used
                 return 0
             }
 
