@@ -49,7 +49,7 @@ class ExternalFileService : AbstractLifecycleComponent {
 
     private data class ExternalFileField(
             val file: ExternalFile,
-            var task: ThreadPool.Cancellable?
+            var task: ThreadPool.Cancellable
     )
 
     @Inject
@@ -76,8 +76,8 @@ class ExternalFileService : AbstractLifecycleComponent {
         if (existingFileField != null) {
             if (existingFileField.file.settings != fileSettings) {
                 logger.debug("Cancelling update task: [${index.name}] [$fieldName]")
-                existingFileField.task?.cancel()
-                existingFileField.task = null
+                existingFileField.task.cancel()
+                this.files.remove(key)
             }
             this.values.computeIfAbsent(key) {
                 existingFileField.file.loadValues(null)
@@ -115,7 +115,7 @@ class ExternalFileService : AbstractLifecycleComponent {
             if (key.indexName != index.name) {
                 continue
             }
-            fileField.task?.cancel()
+            fileField.task.cancel()
             this.files.remove(key)
             this.values.remove(key)
         }
@@ -127,9 +127,9 @@ class ExternalFileService : AbstractLifecycleComponent {
     }
 
     @Synchronized
-    internal fun getUpdateInterval(index: Index, fieldName: String): Long? {
+    internal fun getFileSettings(index: Index, fieldName: String): FileSettings? {
         val key = FileKey(index.name, fieldName)
-        return this.files[key]?.file?.settings?.updateInterval
+        return this.files[key]?.file?.settings
     }
 
     fun getValues(index: Index, fieldName: String): FileValues {

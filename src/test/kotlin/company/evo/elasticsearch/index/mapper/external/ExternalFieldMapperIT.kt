@@ -25,9 +25,9 @@ import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder
 import org.elasticsearch.env.Environment
 import org.elasticsearch.env.NodeEnvironment
-import org.elasticsearch.plugins.Plugin
 import org.elasticsearch.index.query.QueryBuilders.functionScoreQuery
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders.fieldValueFactorFunction
+import org.elasticsearch.plugins.Plugin
 import org.elasticsearch.search.builder.SearchSourceBuilder.searchSource
 import org.elasticsearch.search.sort.SortOrder
 import org.elasticsearch.test.ESIntegTestCase
@@ -37,6 +37,7 @@ import org.hamcrest.Matchers.*
 
 import org.junit.Before
 
+import company.evo.elasticsearch.indices.ExternalFileService
 import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
 
 
@@ -45,6 +46,7 @@ import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
 class ExternalFieldMapperIT : ESIntegTestCase() {
 
     lateinit var nodeDataDir: Path
+    lateinit var extFileService: ExternalFileService
 
     override fun nodePlugins(): Collection<Class<out Plugin>> {
         return Collections.singleton(ExternalFileMapperPlugin::class.java)
@@ -61,11 +63,13 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                 .put(Environment.PATH_DATA_SETTING.key, dataPath)
                 .build()
         val node = internalCluster().startNode(settings)
+        this.extFileService = internalCluster()
+                .getInstance(ExternalFileService::class.java, node)
         val nodePaths = internalCluster()
                 .getInstance(NodeEnvironment::class.java, node)
                 .nodeDataPaths()
         assertEquals(1, nodePaths.size)
-        nodeDataDir = nodePaths[0]
+        this.nodeDataDir = nodePaths[0]
     }
 
     fun testDefaults() {
@@ -317,6 +321,57 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         assertThat(hits.getAt(1).score, equalTo(0.0f))
         assertThat(hits.getAt(2).score, equalTo(0.0f))
         assertThat(hits.getAt(3).score, equalTo(0.0f))
+    }
+
+    fun testUpdateMapping() {
+        val indexName = "test"
+        copyTestResources(indexName)
+
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .addMapping(
+                        "product",
+                        jsonBuilder()
+                                .startObject().startObject("product").startObject("properties")
+                                    .startObject("name")
+                                        .field("type", "text")
+                                    .endObject()
+                                    .startObject("ext_price")
+                                        .field("type", "external_file")
+                                        .field("update_interval", 600)
+                                    .endObject()
+                                .endObject().endObject().endObject())
+                .get()
+
+        assertThat(
+                extFileService
+                        .getFileSettings(resolveIndex(indexName), "ext_price")
+                        ?.updateInterval,
+                equalTo(600L))
+
+        client().admin()
+                .indices()
+                .preparePutMapping(indexName)
+                .setType("product")
+                .setSource(
+                        jsonBuilder()
+                                .startObject().startObject("product").startObject("properties")
+                                    .startObject("name")
+                                        .field("type", "text")
+                                    .endObject()
+                                    .startObject("ext_price")
+                                        .field("type", "external_file")
+                                        .field("update_interval", 60)
+                                    .endObject()
+                                .endObject().endObject().endObject())
+                .get()
+
+        assertThat(
+                extFileService
+                        .getFileSettings(resolveIndex(indexName), "ext_price")
+                        ?.updateInterval,
+                equalTo(60L))
     }
 
     private fun copyTestResources(indexName: String) {

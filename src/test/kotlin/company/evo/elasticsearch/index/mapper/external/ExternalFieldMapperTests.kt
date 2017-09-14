@@ -68,7 +68,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         assertEquals(
                 600L,
                 ExternalFileService.instance
-                        .getUpdateInterval(indexService.index(), "ext_field"))
+                        .getFileSettings(indexService.index(), "ext_field")
+                        ?.updateInterval)
     }
 
     fun testIdKeyField() {
