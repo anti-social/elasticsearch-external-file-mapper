@@ -119,69 +119,13 @@ class ExternalFile(
         try {
             val fileLastModified = Files.getLastModifiedTime(extFilePath)
             if (fileLastModified > (lastModified ?: FileTime.fromMillis(0))) {
-                logger.info("values store type: ${settings.valuesStoreType}")
-                when (settings.valuesStoreType) {
+                return when (settings.valuesStoreType) {
                     ValuesStoreType.RAM -> {
-                        val parsedValues = parse(extFilePath)
-                        if (settings.scalingFactor != null) {
-                            val scalingFactor = settings.scalingFactor
-                            val minValue = (parsedValues.minValue * scalingFactor).toLong()
-                            val maxValue = (parsedValues.maxValue * scalingFactor).toLong()
-                            if (parsedValues.maxKey < Int.MAX_VALUE) {
-                                if (maxValue - minValue < Short.MAX_VALUE) {
-                                    return MemoryIntShortFileValues.Provider(
-                                            parsedValues.keys, parsedValues.values,
-                                            minValue, scalingFactor, fileLastModified)
-                                } else if (maxValue - minValue < Int.MAX_VALUE) {
-                                    return MemoryIntIntFileValues.Provider(
-                                            parsedValues.keys, parsedValues.values,
-                                            minValue, scalingFactor, fileLastModified)
-                                }
-                            }
-                            if (maxValue - minValue < Short.MAX_VALUE) {
-                                return MemoryLongShortFileValues.Provider(
-                                        parsedValues.keys, parsedValues.values,
-                                        minValue, scalingFactor, fileLastModified)
-                            } else if (maxValue - minValue < Int.MAX_VALUE) {
-                                return MemoryLongIntFileValues.Provider(
-                                        parsedValues.keys, parsedValues.values,
-                                        minValue, scalingFactor, fileLastModified)
-                            }
-                            return MemoryIntDoubleFileValues.Provider(
-                                    parsedValues.keys, parsedValues.values, fileLastModified)
-                        }
-                        return MemoryLongDoubleFileValues.Provider(
-                                parsedValues.keys, parsedValues.values, fileLastModified)
+                        getMemoryValuesProvider(
+                                fileLastModified, settings.scalingFactor)
                     }
                     ValuesStoreType.FILE -> {
-                        val indexFilePath = getBinaryFilePath()
-                        val indexLastModified = try {
-                            Files.getLastModifiedTime(indexFilePath)
-                        } catch (e: NoSuchFileException) {
-                            FileTime.fromMillis(0)
-                        }
-                        if (indexLastModified < fileLastModified) {
-                            val parsedValues = parse(extFilePath)
-                            val writer = TrieHashTable.Writer(
-                                    HashTable.ValueSize.LONG, TrieHashTable.BitmaskSize.LONG)
-                            val data = writer.dumpDoubles(parsedValues.keys, parsedValues.values)
-                            val tmpPath = Files.createTempFile(dir, name, null)
-                            try {
-                                Files.newOutputStream(tmpPath).use {
-                                    it.write(data)
-                                }
-                                Files.move(tmpPath, indexFilePath, StandardCopyOption.ATOMIC_MOVE)
-                            } finally {
-                                Files.deleteIfExists(tmpPath)
-                            }
-                            logger.debug("Dumped ${parsedValues.size} values (${data.size} bytes) " +
-                                    "into file [${indexFilePath}]")
-                        }
-                        val mappedData = FileChannel.open(indexFilePath, StandardOpenOption.READ).use {
-                            it.map(FileChannel.MapMode.READ_ONLY, 0, it.size())
-                        }
-                        logger.debug("Loaded values from file [$indexFilePath]")
-                        return MappedFileValues.Provider(mappedData, fileLastModified)
+                        getMappedFileValuesProvider(fileLastModified)
                     }
                 }
             }
@@ -228,6 +172,78 @@ class ExternalFile(
                 "from file [$path]")
         return ParsedValues(keys.toLongArray(), values.toDoubleArray(),
                 keys.size, maxKey, minValue, maxValue)
+    }
+
+    private fun getMemoryValuesProvider(
+            lastModified: FileTime, scalingFactor: Long?): FileValues.Provider
+    {
+        val parsedValues = parse(getExternalFilePath())
+        val valuesProvider = if (scalingFactor != null) {
+            val minValue = (parsedValues.minValue * scalingFactor).toLong()
+            val maxValue = (parsedValues.maxValue * scalingFactor).toLong()
+            if (parsedValues.maxKey < Int.MAX_VALUE) {
+                if (maxValue - minValue < Short.MAX_VALUE) {
+                    MemoryIntShortFileValues.Provider(
+                            parsedValues.keys, parsedValues.values,
+                            minValue, scalingFactor, lastModified)
+                } else if (maxValue - minValue < Int.MAX_VALUE) {
+                    MemoryIntIntFileValues.Provider(
+                            parsedValues.keys, parsedValues.values,
+                            minValue, scalingFactor, lastModified)
+                } else {
+                    MemoryIntDoubleFileValues.Provider(
+                            parsedValues.keys, parsedValues.values, lastModified)
+                }
+            } else {
+                if (maxValue - minValue < Short.MAX_VALUE) {
+                    MemoryLongShortFileValues.Provider(
+                            parsedValues.keys, parsedValues.values,
+                            minValue, scalingFactor, lastModified)
+                } else if (maxValue - minValue < Int.MAX_VALUE) {
+                    MemoryLongIntFileValues.Provider(
+                            parsedValues.keys, parsedValues.values,
+                            minValue, scalingFactor, lastModified)
+                }
+                MemoryLongDoubleFileValues.Provider(
+                        parsedValues.keys, parsedValues.values, lastModified)
+            }
+        } else {
+            MemoryLongDoubleFileValues.Provider(
+                    parsedValues.keys, parsedValues.values, lastModified)
+        }
+        logger.debug("Values size is ${valuesProvider.sizeBytes} bytes")
+        return valuesProvider
+    }
+
+    private fun getMappedFileValuesProvider(lastModified: FileTime): FileValues.Provider {
+        val indexFilePath = getBinaryFilePath()
+        val indexLastModified = try {
+            Files.getLastModifiedTime(indexFilePath)
+        } catch (e: NoSuchFileException) {
+            FileTime.fromMillis(0)
+        }
+        if (indexLastModified < lastModified) {
+            val parsedValues = parse(getExternalFilePath())
+            val writer = TrieHashTable.Writer(
+                    HashTable.ValueSize.LONG, TrieHashTable.BitmaskSize.LONG)
+            val data = writer.dumpDoubles(parsedValues.keys, parsedValues.values)
+            val tmpPath = Files.createTempFile(dir, name, null)
+            try {
+                Files.newOutputStream(tmpPath).use {
+                    it.write(data)
+                }
+                Files.move(tmpPath, indexFilePath, StandardCopyOption.ATOMIC_MOVE)
+            } finally {
+                Files.deleteIfExists(tmpPath)
+            }
+            logger.debug("Dumped ${parsedValues.size} values (${data.size} bytes) " +
+                    "into file [${indexFilePath}]")
+        }
+        val (mappedData, dataSize) = FileChannel.open(indexFilePath, StandardOpenOption.READ).use {
+            Pair(it.map(FileChannel.MapMode.READ_ONLY, 0, it.size()), it.size())
+        }
+        logger.debug("Loaded values from file [$indexFilePath]")
+        return MappedFileValues.Provider(mappedData, dataSize, lastModified)
     }
 
     internal fun getCurrentVersion(): String? {

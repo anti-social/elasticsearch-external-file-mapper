@@ -11,7 +11,8 @@ import net.uaprom.htable.TrieHashTable
 
 interface FileValues {
     interface Provider {
-        fun lastModified(): FileTime?
+        val sizeBytes: Long
+        val lastModified: FileTime
         fun get(): FileValues
     }
     fun get(key: Long, defaultValue: Double): Double
@@ -34,17 +35,17 @@ class MemoryLongDoubleFileValues(
 
     class Provider : FileValues.Provider {
         private val map: TLongDoubleHashMap
-        private val lastModified: FileTime
+        override val sizeBytes: Long
+        override val lastModified: FileTime
 
         constructor(keys: LongArray, values: DoubleArray, lastModified: FileTime) {
-            this.map = TLongDoubleHashMap(keys.size, MAP_LOAD_FACTOR, -1, Double.NaN)
+            this.map = TLongDoubleHashMap(
+                    (keys.size / MAP_LOAD_FACTOR).toInt(), MAP_LOAD_FACTOR, -1, Double.NaN)
             for ((ix, k) in keys.withIndex()) {
                 this.map.put(k, values[ix])
             }
+            this.sizeBytes = map.capacity() * (8L + 8L)
             this.lastModified = lastModified
-        }
-        override fun lastModified(): FileTime? {
-            return lastModified
         }
 
         override fun get(): FileValues {
@@ -80,21 +81,20 @@ class MemoryLongIntFileValues(
         private val map: TLongIntHashMap
         private val baseValue: Long
         private val scalingFactor: Long
-        private val lastModified: FileTime
+        override val sizeBytes: Long
+        override val lastModified: FileTime
 
         constructor(keys: LongArray, values: DoubleArray,
                     baseValue: Long, scalingFactor: Long, lastModified: FileTime) {
-            this.map = TLongIntHashMap(keys.size, MAP_LOAD_FACTOR, NO_KEY, NO_VALUE)
+            this.map = TLongIntHashMap(
+                    (keys.size / MAP_LOAD_FACTOR).toInt(), MAP_LOAD_FACTOR, NO_KEY, NO_VALUE)
             for ((ix, k) in keys.withIndex()) {
                 this.map.put(k, (values[ix] * scalingFactor - baseValue).toInt())
             }
+            this.sizeBytes = map.capacity() * (8L + 4L)
             this.baseValue = baseValue
             this.scalingFactor = scalingFactor
             this.lastModified = lastModified
-        }
-
-        override fun lastModified(): FileTime? {
-            return lastModified
         }
 
         override fun get(): FileValues {
@@ -136,21 +136,20 @@ class MemoryLongShortFileValues(
         private val map: TLongShortHashMap
         private val baseValue: Long
         private val scalingFactor: Long
-        private val lastModified: FileTime
+        override val sizeBytes: Long
+        override val lastModified: FileTime
 
         constructor(keys: LongArray, values: DoubleArray,
                     baseValue: Long, scalingFactor: Long, lastModified: FileTime) {
-            this.map = TLongShortHashMap(keys.size, MAP_LOAD_FACTOR, NO_KEY, NO_VALUE)
+            this.map = TLongShortHashMap(
+                    (keys.size / MAP_LOAD_FACTOR).toInt(), MAP_LOAD_FACTOR, NO_KEY, NO_VALUE)
             for ((ix, k) in keys.withIndex()) {
                 this.map.put(k, (values[ix] * scalingFactor - baseValue).toShort())
             }
+            this.sizeBytes = map.capacity() * (8L + 2L)
             this.baseValue = baseValue
             this.scalingFactor = scalingFactor
             this.lastModified = lastModified
-        }
-
-        override fun lastModified(): FileTime? {
-            return lastModified
         }
 
         override fun get(): FileValues {
@@ -183,18 +182,17 @@ class MemoryIntDoubleFileValues(
 
     class Provider : FileValues.Provider {
         private val map: TIntDoubleHashMap
-        private val lastModified: FileTime
+        override val sizeBytes: Long
+        override val lastModified: FileTime
 
         constructor(keys: LongArray, values: DoubleArray, lastModified: FileTime) {
-            this.map = TIntDoubleHashMap(keys.size, MAP_LOAD_FACTOR, -1, Double.NaN)
+            this.map = TIntDoubleHashMap(
+                    (keys.size / MAP_LOAD_FACTOR).toInt(), MAP_LOAD_FACTOR, -1, Double.NaN)
             for ((ix, k) in keys.withIndex()) {
                 map.put(k.toInt(), values[ix])
             }
+            this.sizeBytes = map.capacity() * (4L + 8L)
             this.lastModified = lastModified
-        }
-
-        override fun lastModified(): FileTime? {
-            return lastModified
         }
 
         override fun get(): FileValues {
@@ -236,21 +234,20 @@ class MemoryIntIntFileValues(
         private val map: TIntIntHashMap
         private val baseValue: Long
         private val scalingFactor: Long
-        private val lastModified: FileTime
+        override val sizeBytes: Long
+        override val lastModified: FileTime
 
         constructor(keys: LongArray, values: DoubleArray,
                     baseValue: Long, scalingFactor: Long, lastModified: FileTime) {
-            this.map = TIntIntHashMap(keys.size, MAP_LOAD_FACTOR, NO_KEY, NO_VALUE)
+            this.map = TIntIntHashMap(
+                    (keys.size / MAP_LOAD_FACTOR).toInt(), MAP_LOAD_FACTOR, NO_KEY, NO_VALUE)
             for ((ix, k) in keys.withIndex()) {
                 this.map.put(k.toInt(), (values[ix] * scalingFactor - baseValue).toInt())
             }
+            this.sizeBytes = map.capacity() * (4L + 4L)
             this.baseValue = baseValue
             this.scalingFactor = scalingFactor
             this.lastModified = lastModified
-        }
-
-        override fun lastModified(): FileTime? {
-            return lastModified
         }
 
         override fun get(): FileValues {
@@ -292,21 +289,20 @@ class MemoryIntShortFileValues(
         private val map: TIntShortHashMap
         private val baseValue: Long
         private val scalingFactor: Long
-        private val lastModified: FileTime
+        override val sizeBytes: Long
+        override val lastModified: FileTime
 
         constructor(keys: LongArray, values: DoubleArray,
                     baseValue: Long, scalingFactor: Long, lastModified: FileTime) {
-            this.map = TIntShortHashMap(keys.size, MAP_LOAD_FACTOR, NO_KEY, NO_VALUE)
+            this.map = TIntShortHashMap(
+                    (keys.size / MAP_LOAD_FACTOR).toInt(), MAP_LOAD_FACTOR, NO_KEY, NO_VALUE)
             for ((ix, k) in keys.withIndex()) {
                 this.map.put(k.toInt(), (values[ix] * scalingFactor - baseValue).toShort())
             }
+            this.sizeBytes = map.capacity() * (4L + 2L)
             this.baseValue = baseValue
             this.scalingFactor = scalingFactor
             this.lastModified = lastModified
-        }
-
-        override fun lastModified(): FileTime? {
-            return lastModified
         }
 
         override fun get(): FileValues {
@@ -339,11 +335,9 @@ class MappedFileValues(
 
     class Provider(
             private val data: ByteBuffer,
-            private val lastModified: FileTime
+            override val sizeBytes: Long,
+            override val lastModified: FileTime
     ) : FileValues.Provider {
-        override fun lastModified(): FileTime? {
-            return lastModified
-        }
 
         override fun get(): FileValues {
             return MappedFileValues(TrieHashTable.Reader(data.slice()))

@@ -99,7 +99,7 @@ class ExternalFileService : AbstractLifecycleComponent {
                             extFile.download()
                         }
                         this.values.compute(key) { _, oldValues ->
-                            extFile.loadValues(oldValues?.lastModified()) ?: oldValues
+                            extFile.loadValues(oldValues?.lastModified) ?: oldValues
                         }
                         logger.debug("Finished updating: [${index.name}] [$fieldName]")
                     },
