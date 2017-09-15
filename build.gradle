@@ -1,10 +1,12 @@
 buildscript {
+    def esVersion = System.getProperty('esVersion', '5.5.2')
+
     repositories {
         mavenCentral()
         jcenter()
     }
     dependencies {
-        classpath "org.elasticsearch.gradle:build-tools:5.5.2"
+        classpath "org.elasticsearch.gradle:build-tools:${esVersion}"
     }
 }
 
@@ -21,11 +23,15 @@ esplugin {
     classname = 'company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin'
 }
 
-project.version = project.file('project.version')
+def version = project.file('project.version')
         .newDataInputStream()
         .newReader()
         .readLine()
         .toUpperCase()
+if (hasProperty('release') && version.endsWith('-SNAPSHOT')) {
+    version = version.substring(0, version.length() - 9)
+}
+project.version = "${version}-es${versions.elasticsearch}"
 
 repositories {
     mavenCentral()

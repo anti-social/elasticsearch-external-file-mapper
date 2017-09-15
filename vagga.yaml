@@ -158,7 +158,7 @@ commands:
     run: |
       set -e
       DISTRIBUTION_DIR=/work/build/distributions
-      PLUGIN_PATH=$DISTRIBUTION_DIR/mapper-external-file-$(cat /work/project.version).zip
+      PLUGIN_PATH=$DISTRIBUTION_DIR/mapper-external-file-$(cat /work/project.version)-es5.5.2.zip
       /usr/share/elasticsearch/bin/elasticsearch-plugin install file:${PLUGIN_PATH}
       /usr/share/elasticsearch/bin/elasticsearch \
         -E path.conf=/etc/elasticsearch \
