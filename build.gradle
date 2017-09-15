@@ -46,6 +46,12 @@ dependencies {
     compile project(':htable-java')
 }
 
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+
 task testFunc(type: Test) {
     include '**/*TestCase.class'
 }

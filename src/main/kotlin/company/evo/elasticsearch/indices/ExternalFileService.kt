@@ -16,9 +16,13 @@
 
 package company.evo.elasticsearch.indices
 
+import java.lang.Exception
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+
+import org.apache.logging.log4j.Logger
 
 import org.apache.lucene.util.IOUtils
 
@@ -27,6 +31,8 @@ import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
+import org.elasticsearch.common.util.concurrent.AbstractRunnable
+import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException
 import org.elasticsearch.env.NodeEnvironment
 import org.elasticsearch.index.Index
 import org.elasticsearch.indices.cluster.IndicesClusterStateService.AllocatedIndices.IndexRemovalReason
@@ -101,32 +107,39 @@ class ExternalFileService : AbstractLifecycleComponent {
         }
         this.files.computeIfAbsent(key) {
             logger.debug("Scheduling update task every " +
-                    "${fileSettings.updateInterval} seconds: [${index.name}] [$fieldName]")
-            val future = threadPool.scheduleWithFixedDelay(
-                    {
-                        logger.debug("Started updating: [${index.name}] [$fieldName]")
-                        if (fileSettings.url != null) {
-                            extFile.download()
-                        }
-                        this.values.compute(key) { _, oldValues ->
-                            extFile.loadValues(oldValues?.lastModified) ?: oldValues
-                        }
-                        logger.debug("Finished updating: [${index.name}] [$fieldName]")
-                    },
-                    TimeValue.timeValueSeconds(fileSettings.updateInterval),
-                    ThreadPool.Names.SAME)
+                    "${fileSettings.updateInterval} +/- ${fileSettings.updateScatter ?: 0 / 2} seconds: " +
+                    "[${index.name}] [$fieldName]")
+            val future = ScatteredReschedulingRunnable(
+                    ScheduleIntervals(
+                            0,
+                            fileSettings.updateInterval,
+                            fileSettings.updateScatter ?: 0),
+                    ThreadPool.Names.SAME,
+                    threadPool,
+                    Loggers.getLogger(ScatteredReschedulingRunnable::class.java)
+            ) {
+                logger.debug("Started updating: [${index.name}] [$fieldName]")
+                if (fileSettings.url != null) {
+                    extFile.download()
+                }
+                this.values.compute(key) { _, oldValues ->
+                    extFile.loadValues(oldValues?.lastModified) ?: oldValues
+                }
+                logger.debug("Finished updating: [${index.name}] [$fieldName]")
+            }
             ExternalFileField(extFile, future)
         }
     }
 
     @Synchronized
     fun removeIndex(index: Index, reason: IndexRemovalReason) {
-        for ((key, fileField) in this.files) {
+        val files = this.files.iterator()
+        for ((key, fileField) in files) {
             if (key.indexName != index.name) {
                 continue
             }
             fileField.task.cancel()
-            this.files.remove(key)
+            files.remove()
             this.values.remove(key)
         }
         // FIXME Possibly we also should clean up external files on NO_LONGER_ASSIGNED
@@ -155,5 +168,71 @@ class ExternalFileService : AbstractLifecycleComponent {
         return this.nodeDir
                 .resolve(EXTERNAL_DIR_NAME)
                 .resolve(index.name)
+    }
+}
+
+class ScatteredReschedulingRunnable: AbstractRunnable, ThreadPool.Cancellable {
+    private val runnable: () -> Unit
+    private val executor: String
+    private val threadPool: ThreadPool
+    private val logger: Logger
+    private val intervals: ScheduleIntervals
+
+    @Volatile
+    private var run = true
+
+    constructor(
+            intervals: ScheduleIntervals,
+            executor: String,
+            threadPool: ThreadPool,
+            logger: Logger,
+            runnable: () -> Unit) {
+        this.intervals = intervals
+        this.runnable = runnable
+        this.executor = executor
+        this.threadPool = threadPool
+        this.logger = logger
+
+        threadPool.schedule(
+                TimeValue.timeValueSeconds(intervals.next()),
+                executor,
+                this)
+    }
+
+    override fun cancel() {
+        run = false
+    }
+
+    override fun isCancelled(): Boolean = !run
+
+    override fun doRun() {
+        if (run) {
+            runnable()
+        }
+    }
+
+    override fun onFailure(e: Exception?) {
+        logger.warn("failed to run scheduled task [$runnable] on thread pool [$executor]", e)
+    }
+
+    override fun onRejection(e: Exception?) {
+        run = false
+        if (logger.isDebugEnabled) {
+            logger.debug("scheduled task [$runnable] was rejected on thread pool [$executor]", e)
+        }
+        super.onRejection(e)
+    }
+
+    override fun onAfter() {
+        if (run) {
+            try {
+                threadPool.schedule(
+                        TimeValue.timeValueSeconds(intervals.next()),
+                        executor,
+                        this)
+            } catch (e: EsRejectedExecutionException) {
+                onRejection(e)
+            }
+        }
     }
 }

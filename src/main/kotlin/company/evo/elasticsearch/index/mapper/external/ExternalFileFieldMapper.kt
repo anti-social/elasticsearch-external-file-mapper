@@ -28,10 +28,12 @@ import org.apache.lucene.search.SortField
 
 import org.elasticsearch.cluster.metadata.IndexMetaData
 import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.index.Index
 import org.elasticsearch.index.fielddata.*
+import org.elasticsearch.index.fielddata.fieldcomparator.DoubleValuesComparatorSource
 import org.elasticsearch.index.mapper.FieldMapper
 import org.elasticsearch.index.mapper.IdFieldMapper
 import org.elasticsearch.index.mapper.MappedFieldType
@@ -44,12 +46,7 @@ import org.elasticsearch.index.query.QueryShardContext
 import org.elasticsearch.index.query.QueryShardException
 import org.elasticsearch.search.MultiValueMode
 
-
-import company.evo.elasticsearch.indices.ExternalFileService
-import company.evo.elasticsearch.indices.FileSettings
-import company.evo.elasticsearch.indices.FileValues
-import company.evo.elasticsearch.indices.ValuesStoreType
-import org.elasticsearch.index.fielddata.fieldcomparator.DoubleValuesComparatorSource
+import company.evo.elasticsearch.indices.*
 
 
 class ExternalFileFieldMapper(
@@ -57,7 +54,6 @@ class ExternalFileFieldMapper(
         fieldType: MappedFieldType,
         defaultFieldType: MappedFieldType,
         indexSettings: Settings,
-        private val fileSettings: FileSettings,
         multiFields: MultiFields,
         // Do we need that argument?
         copyTo: CopyTo?
@@ -77,6 +73,23 @@ class ExternalFileFieldMapper(
         }
     }
 
+    data class TimeValueWithOriginal(
+            val timeValue: TimeValue,
+            val originalValue: Any
+    ) {
+        companion object {
+            fun parse(value: Any, fieldName: String): TimeValueWithOriginal {
+                val valueStr = value.toString()
+                val timeValue = try {
+                    TimeValue.timeValueSeconds(valueStr.toLong())
+                } catch (_: NumberFormatException) {
+                    TimeValue.parseTimeValue(valueStr, fieldName)
+                }
+                return TimeValueWithOriginal(timeValue, value)
+            }
+        }
+    }
+
     override fun contentType() : String {
         return CONTENT_TYPE
     }
@@ -89,10 +102,20 @@ class ExternalFileFieldMapper(
 
     override fun doXContentBody(builder: XContentBuilder, includeDefaults: Boolean, params: ToXContent.Params) {
         super.doXContentBody(builder, includeDefaults, params)
+
         val fileSettings = fieldType().fileSettings()
+        val updateInterval = fieldType().originalUpdateInterval()
+        val updateScatter = fieldType().originalUpdateScatter()
+        val timeout = fieldType().originalTimeout()
+
         // TODO Find out how to rid of next check
-        fileSettings ?: throw IllegalStateException("update_interval must be set")
-        builder.field("update_interval", fileSettings.updateInterval)
+        fileSettings ?: throw IllegalStateException("fileSettings must be set")
+        updateInterval ?: throw IllegalStateException("updateInterval must be set")
+
+        builder.field("update_interval", updateInterval)
+        if (includeDefaults || updateScatter != null) {
+            builder.field("update_scatter", updateScatter)
+        }
         if (includeDefaults || fieldType().keyFieldName() != null) {
             builder.field("key_field", fieldType().keyFieldName())
         }
@@ -106,8 +129,8 @@ class ExternalFileFieldMapper(
         if (includeDefaults || fileSettings.url != null) {
             builder.field("url", fileSettings.url)
         }
-        if (includeDefaults || fileSettings.timeout != null) {
-            builder.field("timeout", fileSettings.timeout)
+        if (includeDefaults || timeout != null) {
+            builder.field("timeout", timeout)
         }
     }
 
@@ -136,7 +159,12 @@ class ExternalFileFieldMapper(
                         entries.remove()
                     }
                     "update_interval" -> {
-                        builder.updateInterval(value.toString().toLong())
+                        builder.updateInterval(
+                                TimeValueWithOriginal.parse(value, "update_interval"))
+                        entries.remove()
+                    }
+                    "update_scatter" -> {
+                        builder.updateScatter(value.toString())
                         entries.remove()
                     }
                     "url" -> {
@@ -144,7 +172,7 @@ class ExternalFileFieldMapper(
                         entries.remove()
                     }
                     "timeout" -> {
-                        builder.timeout(value.toString().toInt())
+                        builder.timeout(TimeValueWithOriginal.parse(value, "timeout"))
                         entries.remove()
                     }
                     else -> {
@@ -165,9 +193,10 @@ class ExternalFileFieldMapper(
 
         private var valuesStoreType: ValuesStoreType = DEFAULT_VALUES_STORE_TYPE
         private var scalingFactor: Long? = null
-        private var updateInterval: Long? = null
+        private var updateInterval: TimeValueWithOriginal? = null
+        private var updateScatter: String? = null
         private var url: String? = null
-        private var timeout: Int? = null
+        private var timeout: TimeValueWithOriginal? = null
 
         constructor(name: String) : super(name, FIELD_TYPE, FIELD_TYPE) {
             this.builder = this
@@ -184,16 +213,31 @@ class ExternalFileFieldMapper(
                     .get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
             val indexUuid = context.indexSettings()
                     .get(IndexMetaData.SETTING_INDEX_UUID)
-            val fileSettings = FileSettings(valuesStoreType, updateInterval, scalingFactor, url, timeout)
+            val updateScatter = this.updateScatter
+            val updateIntervalScatter = if (updateScatter == null) {
+                0
+            } else if (updateScatter.endsWith("%")) {
+                updateInterval.timeValue.seconds /
+                        100 * updateScatter.substring(0, updateScatter.length - 1).toLong()
+            } else {
+                updateScatter.toLong()
+            }
+            val fileSettings = FileSettings(
+                    valuesStoreType, updateInterval.timeValue.seconds, updateIntervalScatter,
+                    scalingFactor, url, timeout?.timeValue?.seconds?.toInt())
             // There is no index when putting template
             if (indexName != null && indexUuid != null) {
                 ExternalFileService.instance.addField(
                         Index(indexName, indexUuid), name, fileSettings)
             }
             setupFieldType(context)
-            fieldType().setFileSettings(fileSettings)
+            fieldType().setFileSettings(
+                    fileSettings,
+                    updateInterval.originalValue,
+                    updateScatter,
+                    timeout?.originalValue)
             return ExternalFileFieldMapper(
-                    name, fieldType, defaultFieldType, context.indexSettings(), fileSettings,
+                    name, fieldType, defaultFieldType, context.indexSettings(),
                     multiFieldsBuilder.build(this, context), copyTo)
         }
 
@@ -202,13 +246,18 @@ class ExternalFileFieldMapper(
             return this
         }
 
-        fun updateInterval(updateInterval: Long): Builder {
+        fun updateInterval(updateInterval: TimeValueWithOriginal): Builder {
             this.updateInterval = updateInterval
             return this
         }
 
-        fun updateInterval(): Long? {
+        fun updateInterval(): TimeValueWithOriginal? {
             return updateInterval
+        }
+
+        fun updateScatter(scatter: String): Builder {
+            this.updateScatter = scatter
+            return this
         }
 
         fun valuesStoreType(valuesStoreType: ValuesStoreType): Builder {
@@ -226,7 +275,7 @@ class ExternalFileFieldMapper(
             return this
         }
 
-        fun timeout(timeout: Int): Builder {
+        fun timeout(timeout: TimeValueWithOriginal): Builder {
             this.timeout = timeout
             return this
         }
@@ -235,11 +284,16 @@ class ExternalFileFieldMapper(
     class ExternalFileFieldType : MappedFieldType {
         private var keyFieldName: String? = null
         private var fileSettings: FileSettings? = null
+        private var originalUpdateInterval: Any? = null
+        private var originalUpdateScatter: Any? = null
+        private var originalTimeout: Any? = null
 
         constructor()
         private constructor(ref: ExternalFileFieldType) : super(ref) {
             this.keyFieldName = ref.keyFieldName
             this.fileSettings = ref.fileSettings
+            this.originalUpdateInterval = ref.originalUpdateInterval
+            this.originalTimeout = ref.originalTimeout
         }
 
         override fun clone(): ExternalFileFieldType {
@@ -273,8 +327,27 @@ class ExternalFileFieldMapper(
             return fileSettings
         }
 
-        fun setFileSettings(fileSettings: FileSettings) {
+        fun setFileSettings(
+                fileSettings: FileSettings,
+                originalUpdateInterval: Any,
+                originalUpdateScatter: Any?,
+                originalTimeout: Any?) {
             this.fileSettings = fileSettings
+            this.originalUpdateInterval = originalUpdateInterval
+            this.originalUpdateScatter = originalUpdateScatter
+            this.originalTimeout = originalTimeout
+        }
+
+        fun originalUpdateInterval(): Any? {
+            return originalUpdateInterval
+        }
+
+        fun originalUpdateScatter(): Any? {
+            return originalUpdateScatter
+        }
+
+        fun originalTimeout(): Any? {
+            return originalTimeout
         }
 
         override fun typeName(): String {

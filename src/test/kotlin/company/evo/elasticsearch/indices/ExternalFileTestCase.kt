@@ -26,7 +26,7 @@ class ExternalFileTestCase : Assert() {
                 this.tempFolder.root.toPath(),
                 fieldName,
                 indexName,
-                FileSettings(ValuesStoreType.RAM, 60, null, fileUrl, null))
+                FileSettings(ValuesStoreType.RAM, 60, null, null, fileUrl, null))
 
         var downloaded = fileUpdater.download()
         assert(downloaded)
@@ -55,7 +55,7 @@ class ExternalFileTestCase : Assert() {
                 this.tempFolder.root.toPath(),
                 fieldName,
                 indexName,
-                FileSettings(ValuesStoreType.FILE,60, null, fileUrl, null))
+                FileSettings(ValuesStoreType.FILE, 60, null, null, fileUrl, null))
 
         var downloaded = fileUpdater.download()
         assert(downloaded)

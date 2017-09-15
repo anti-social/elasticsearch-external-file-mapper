@@ -9,6 +9,8 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.FileTime
 import java.nio.file.NoSuchFileException
+import java.util.*
+import java.util.stream.LongStream
 
 import org.apache.http.client.config.RequestConfig
 import org.apache.http.client.methods.HttpGet
@@ -33,15 +35,39 @@ enum class ValuesStoreType {
     FILE,
 }
 
+class ScheduleIntervals {
+    private val intervals: Iterator<Long>
+
+    constructor(initialInterval: Long, interval: Long, scatter: Long) {
+        val halfScatter = scatter / 2
+        val minInitialInterval = maxOf(initialInterval - halfScatter, 0)
+        val firstInterval = Random()
+                .longs(minInitialInterval, minInitialInterval + scatter + 1)
+                .iterator()
+                .next()
+        val intervals = Random()
+                .longs(maxOf(interval - halfScatter, 0),
+                        interval + halfScatter + 1)
+        this.intervals = LongStream.concat(LongStream.of(firstInterval), intervals)
+                .iterator()
+    }
+
+    fun next(): Long {
+        return this.intervals.next()
+    }
+}
+
 data class FileSettings(
         val valuesStoreType: ValuesStoreType,
         val updateInterval: Long,
+        val updateScatter: Long?,
         val scalingFactor: Long?,
         val url: String?,
         val timeout: Int?
 ) {
     fun isUpdateChanged(other: FileSettings): Boolean {
         return other.updateInterval != updateInterval ||
+                other.updateScatter != updateScatter ||
                 other.url != url ||
                 other.timeout != timeout
     }

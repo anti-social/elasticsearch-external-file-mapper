@@ -27,7 +27,7 @@ import org.elasticsearch.plugins.Plugin
 import org.elasticsearch.test.ESSingleNodeTestCase
 import org.elasticsearch.test.InternalSettingsPlugin
 
-import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.*
 
 import org.junit.Before
 
@@ -99,6 +99,60 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         val fields = parsedDoc.rootDoc().getFields("ext_field")
         assertNotNull(fields)
         assertEquals(Arrays.toString(fields), 0, fields.size)
+    }
+
+    fun testTimeParsing() {
+        val mapping = XContentFactory.jsonBuilder()
+                .startObject().startObject("type")
+                    .startObject("properties")
+                        .startObject("ext_field_1")
+                            .field("type", "external_file")
+                            .field("update_interval", "600")
+                            .field("timeout", 60)
+                        .endObject()
+                        .startObject("ext_field_2")
+                            .field("type", "external_file")
+                            .field("update_interval", "2h")
+                            .field("timeout", "5m")
+                        .endObject()
+                    .endObject()
+                .endObject().endObject().string()
+        val mapper = parser.parse("type", CompressedXContent(mapping))
+        val extFieldMapper1 = mapper.mappers().getMapper("ext_field_1")
+        assertThat(extFieldMapper1, `is`(instanceOf(ExternalFileFieldMapper::class.java)))
+        val fileSettings1 = (extFieldMapper1 as ExternalFileFieldMapper)
+                .fieldType()
+                .fileSettings()
+        assertEquals(fileSettings1?.updateInterval, 600L)
+        assertEquals(fileSettings1?.timeout, 60)
+        val extFieldMapper2 = mapper.mappers().getMapper("ext_field_2")
+        assertThat(extFieldMapper2, `is`(instanceOf(ExternalFileFieldMapper::class.java)))
+        val fileSettings2 = (extFieldMapper2 as ExternalFileFieldMapper)
+                .fieldType()
+                .fileSettings()
+        assertEquals(fileSettings2?.updateInterval, 7200L)
+        assertEquals(fileSettings2?.timeout, 300)
+    }
+
+    fun testUpdateScatterParsing() {
+        val mapping = XContentFactory.jsonBuilder()
+                .startObject().startObject("type")
+                    .startObject("properties")
+                        .startObject("ext_field_1")
+                            .field("type", "external_file")
+                            .field("update_interval", 600)
+                            .field("update_scatter", "20%")
+                        .endObject()
+                    .endObject()
+                .endObject().endObject().string()
+        val mapper = parser.parse("type", CompressedXContent(mapping))
+        val extFieldMapper1 = mapper.mappers().getMapper("ext_field_1")
+        assertThat(extFieldMapper1, `is`(instanceOf(ExternalFileFieldMapper::class.java)))
+        val fileSettings1 = (extFieldMapper1 as ExternalFileFieldMapper)
+                .fieldType()
+                .fileSettings()
+        assertEquals(fileSettings1?.updateInterval, 600L)
+        assertEquals(fileSettings1?.updateScatter, 120L)
     }
 
 // TODO find a way to check existing of the key_field
