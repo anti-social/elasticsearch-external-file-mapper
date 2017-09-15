@@ -38,6 +38,7 @@ import org.hamcrest.Matchers.*
 import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
+import company.evo.elasticsearch.indices.MemoryIntShortFileValues
 import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
 
 
@@ -92,6 +93,39 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                             .endObject()
                         .endObject().endObject().endObject())
                 .get()
+
+        indexTestDocuments(indexName)
+
+        checkHits()
+    }
+
+    fun testScalingFactor() {
+        val indexName = "test"
+        copyTestResources(indexName)
+
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .addMapping(
+                        "product",
+                        jsonBuilder()
+                                .startObject().startObject("product").startObject("properties")
+                                    .startObject("name")
+                                        .field("type", "text")
+                                    .endObject()
+                                    .startObject("ext_price")
+                                        .field("type", "external_file")
+                                        .field("update_interval", 600)
+                                        .field("scaling_factor", 100)
+                                    .endObject()
+                                .endObject().endObject().endObject())
+                .get()
+
+        val index = resolveIndex(indexName)
+        val fileSettings = extFileService.getFileSettings(index, "ext_price")
+        assertThat(fileSettings?.scalingFactor, equalTo(100L))
+        assertThat(extFileService.getValues(index, "ext_price"),
+                `is`(instanceOf(MemoryIntShortFileValues::class.java)))
 
         indexTestDocuments(indexName)
 

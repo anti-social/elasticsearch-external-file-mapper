@@ -100,6 +100,9 @@ class ExternalFileFieldMapper(
             builder.field("values_store_type",
                     fileSettings.valuesStoreType.toString().toLowerCase(Locale.ENGLISH))
         }
+        if (includeDefaults || fileSettings.scalingFactor != null) {
+            builder.field("scaling_factor", fileSettings.scalingFactor)
+        }
         if (includeDefaults || fileSettings.url != null) {
             builder.field("url", fileSettings.url)
         }
@@ -126,6 +129,10 @@ class ExternalFileFieldMapper(
                     "values_store_type" -> {
                         builder.valuesStoreType(
                                 ValuesStoreType.valueOf(value.toString().toUpperCase(Locale.ENGLISH)))
+                        entries.remove()
+                    }
+                    "scaling_factor" -> {
+                        builder.scalingFactor(value.toString().toLong())
                         entries.remove()
                     }
                     "update_interval" -> {
@@ -157,6 +164,7 @@ class ExternalFileFieldMapper(
     class Builder : FieldMapper.Builder<Builder, ExternalFileFieldMapper> {
 
         private var valuesStoreType: ValuesStoreType = DEFAULT_VALUES_STORE_TYPE
+        private var scalingFactor: Long? = null
         private var updateInterval: Long? = null
         private var url: String? = null
         private var timeout: Int? = null
@@ -176,7 +184,7 @@ class ExternalFileFieldMapper(
                     .get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
             val indexUuid = context.indexSettings()
                     .get(IndexMetaData.SETTING_INDEX_UUID)
-            val fileSettings = FileSettings(valuesStoreType, updateInterval, url, timeout)
+            val fileSettings = FileSettings(valuesStoreType, updateInterval, scalingFactor, url, timeout)
             // There is no index when putting template
             if (indexName != null && indexUuid != null) {
                 ExternalFileService.instance.addField(
@@ -205,6 +213,11 @@ class ExternalFileFieldMapper(
 
         fun valuesStoreType(valuesStoreType: ValuesStoreType): Builder {
             this.valuesStoreType = valuesStoreType
+            return this
+        }
+
+        fun scalingFactor(factor: Long): Builder {
+            this.scalingFactor = factor
             return this
         }
 

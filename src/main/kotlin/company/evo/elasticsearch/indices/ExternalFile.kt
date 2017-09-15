@@ -3,15 +3,12 @@ package company.evo.elasticsearch.indices
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.nio.channels.FileChannel
-import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.FileTime
 import java.nio.file.NoSuchFileException
-
-import gnu.trove.map.hash.TLongDoubleHashMap
 
 import org.apache.http.client.config.RequestConfig
 import org.apache.http.client.methods.HttpGet
@@ -24,85 +21,12 @@ import net.uaprom.htable.HashTable
 import net.uaprom.htable.TrieHashTable
 
 
+const val MAP_LOAD_FACTOR: Float = 0.75F
+
 internal data class FileKey(
         val indexName: String,
         val fieldName: String
 )
-
-interface FileValues {
-    interface Provider {
-        fun lastModified(): FileTime?
-        fun get(): FileValues
-    }
-    fun get(key: Long, defaultValue: Double): Double
-    fun contains(key: Long): Boolean
-}
-
-class EmptyFileValues : FileValues {
-    override fun get(key: Long, defaultValue: Double): Double {
-        return defaultValue
-    }
-
-    override fun contains(key: Long): Boolean {
-        return false
-    }
-}
-
-class MemoryFileValues(
-        private val values: TLongDoubleHashMap
-) : FileValues {
-
-    class Provider(
-            private val values: TLongDoubleHashMap,
-            private val lastModified: FileTime
-    ) : FileValues.Provider {
-        override fun lastModified(): FileTime? {
-            return lastModified
-        }
-
-        override fun get(): FileValues {
-            return MemoryFileValues(values)
-        }
-    }
-
-    override fun get(key: Long, defaultValue: Double): Double {
-        val v = values.get(key)
-        if (v.isNaN()) {
-            return defaultValue
-        }
-        return v
-    }
-
-    override fun contains(key: Long): Boolean {
-        return values.containsKey(key)
-    }
-}
-
-class MappedFileValues(
-        private val values: HashTable.Reader
-) : FileValues {
-
-    class Provider(
-            private val data: ByteBuffer,
-            private val lastModified: FileTime
-    ) : FileValues.Provider {
-        override fun lastModified(): FileTime? {
-            return lastModified
-        }
-
-        override fun get(): FileValues {
-            return MappedFileValues(TrieHashTable.Reader(data.slice()))
-        }
-    }
-
-    override fun get(key: Long, defaultValue: Double): Double {
-        return values.getDouble(key, defaultValue)
-    }
-
-    override fun contains(key: Long): Boolean {
-        return values.exists(key)
-    }
-}
 
 enum class ValuesStoreType {
     RAM,
@@ -112,6 +36,7 @@ enum class ValuesStoreType {
 data class FileSettings(
         val valuesStoreType: ValuesStoreType,
         val updateInterval: Long,
+        val scalingFactor: Long?,
         val url: String?,
         val timeout: Int?
 )
@@ -123,6 +48,15 @@ class ExternalFile(
         val settings: FileSettings,
         private val logger: Logger)
 {
+    private class ParsedValues(
+            val keys: LongArray,
+            val values: DoubleArray,
+            val size: Int,
+            val maxKey: Long,
+            val minValue: Double,
+            val maxValue: Double
+    )
+
     constructor(dir: Path, name: String, indexName: String, settings: FileSettings) :
             this(dir, name, indexName, settings, LogManager.getLogger(ExternalFile::class.java))
 
@@ -185,14 +119,39 @@ class ExternalFile(
         try {
             val fileLastModified = Files.getLastModifiedTime(extFilePath)
             if (fileLastModified > (lastModified ?: FileTime.fromMillis(0))) {
+                logger.info("values store type: ${settings.valuesStoreType}")
                 when (settings.valuesStoreType) {
                     ValuesStoreType.RAM -> {
-                        val (keys, values) = parse(extFilePath)
-                        val map = TLongDoubleHashMap(keys.size, 0.85F, -1, Double.NaN)
-                        for ((ix, k) in keys.withIndex()) {
-                            map.put(k, values[ix])
+                        val parsedValues = parse(extFilePath)
+                        if (settings.scalingFactor != null) {
+                            val scalingFactor = settings.scalingFactor
+                            val minValue = (parsedValues.minValue * scalingFactor).toLong()
+                            val maxValue = (parsedValues.maxValue * scalingFactor).toLong()
+                            if (parsedValues.maxKey < Int.MAX_VALUE) {
+                                if (maxValue - minValue < Short.MAX_VALUE) {
+                                    return MemoryIntShortFileValues.Provider(
+                                            parsedValues.keys, parsedValues.values,
+                                            minValue, scalingFactor, fileLastModified)
+                                } else if (maxValue - minValue < Int.MAX_VALUE) {
+                                    return MemoryIntIntFileValues.Provider(
+                                            parsedValues.keys, parsedValues.values,
+                                            minValue, scalingFactor, fileLastModified)
+                                }
+                            }
+                            if (maxValue - minValue < Short.MAX_VALUE) {
+                                return MemoryLongShortFileValues.Provider(
+                                        parsedValues.keys, parsedValues.values,
+                                        minValue, scalingFactor, fileLastModified)
+                            } else if (maxValue - minValue < Int.MAX_VALUE) {
+                                return MemoryLongIntFileValues.Provider(
+                                        parsedValues.keys, parsedValues.values,
+                                        minValue, scalingFactor, fileLastModified)
+                            }
+                            return MemoryIntDoubleFileValues.Provider(
+                                    parsedValues.keys, parsedValues.values, fileLastModified)
                         }
-                        return MemoryFileValues.Provider(map, fileLastModified)
+                        return MemoryLongDoubleFileValues.Provider(
+                                parsedValues.keys, parsedValues.values, fileLastModified)
                     }
                     ValuesStoreType.FILE -> {
                         val indexFilePath = getBinaryFilePath()
@@ -202,10 +161,10 @@ class ExternalFile(
                             FileTime.fromMillis(0)
                         }
                         if (indexLastModified < fileLastModified) {
-                            val (keys, values) = parse(extFilePath)
+                            val parsedValues = parse(extFilePath)
                             val writer = TrieHashTable.Writer(
                                     HashTable.ValueSize.LONG, TrieHashTable.BitmaskSize.LONG)
-                            val data = writer.dumpDoubles(keys, values)
+                            val data = writer.dumpDoubles(parsedValues.keys, parsedValues.values)
                             val tmpPath = Files.createTempFile(dir, name, null)
                             try {
                                 Files.newOutputStream(tmpPath).use {
@@ -215,7 +174,7 @@ class ExternalFile(
                             } finally {
                                 Files.deleteIfExists(tmpPath)
                             }
-                            logger.debug("Dumped ${keys.size} values (${data.size} bytes) " +
+                            logger.debug("Dumped ${parsedValues.size} values (${data.size} bytes) " +
                                     "into file [${indexFilePath}]")
                         }
                         val mappedData = FileChannel.open(indexFilePath, StandardOpenOption.READ).use {
@@ -233,7 +192,10 @@ class ExternalFile(
         return null
     }
 
-    private fun parse(path: Path): Pair<LongArray, DoubleArray> {
+    private fun parse(path: Path): ParsedValues {
+        var maxKey = Long.MIN_VALUE
+        var minValue = Double.POSITIVE_INFINITY
+        var maxValue = Double.NEGATIVE_INFINITY
         val keys = ArrayList<Long>()
         val values = ArrayList<Double>()
         Files.newBufferedReader(path).use {
@@ -246,16 +208,26 @@ class ExternalFile(
                     continue
                 }
                 val delimiterIx = line.indexOf('=')
-                val key = line.substring(0, delimiterIx).trim()
-                val value = line.substring(delimiterIx + 1).trim()
-                keys.add(key.toLong())
-                values.add(value.toDouble())
+                val key = line.substring(0, delimiterIx).trim().toLong()
+                val value = line.substring(delimiterIx + 1).trim().toDouble()
+                keys.add(key)
+                values.add(value)
+                if (key > maxKey) {
+                    maxKey = key
+                }
+                if (value < minValue) {
+                    minValue = value
+                }
+                if (value > maxValue) {
+                    maxValue = value
+                }
             }
         }
         logger.info("Parsed ${keys.size} values " +
                 "for [$name] field of [${indexName}] index " +
                 "from file [$path]")
-        return Pair(keys.toLongArray(), values.toDoubleArray())
+        return ParsedValues(keys.toLongArray(), values.toDoubleArray(),
+                keys.size, maxKey, minValue, maxValue)
     }
 
     internal fun getCurrentVersion(): String? {
