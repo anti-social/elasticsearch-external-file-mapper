@@ -214,9 +214,10 @@ class ExternalFile(
                     MemoryLongIntFileValues.Provider(
                             parsedValues.keys, parsedValues.values,
                             minValue, scalingFactor, lastModified)
+                } else {
+                    MemoryLongDoubleFileValues.Provider(
+                            parsedValues.keys, parsedValues.values, lastModified)
                 }
-                MemoryLongDoubleFileValues.Provider(
-                        parsedValues.keys, parsedValues.values, lastModified)
             }
         } else {
             MemoryLongDoubleFileValues.Provider(
