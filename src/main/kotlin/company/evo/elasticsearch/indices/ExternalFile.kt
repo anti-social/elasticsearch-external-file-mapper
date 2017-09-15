@@ -39,7 +39,18 @@ data class FileSettings(
         val scalingFactor: Long?,
         val url: String?,
         val timeout: Int?
-)
+) {
+    fun isUpdateChanged(other: FileSettings): Boolean {
+        return other.updateInterval != updateInterval ||
+                other.url != url ||
+                other.timeout != timeout
+    }
+
+    fun isStoreChanged(other: FileSettings): Boolean {
+        return other.scalingFactor != scalingFactor ||
+                other.valuesStoreType != valuesStoreType
+    }
+}
 
 class ExternalFile(
         private val dir: Path,

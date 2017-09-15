@@ -71,25 +71,35 @@ class ExternalFileService : AbstractLifecycleComponent {
     @Synchronized
     fun addField(index: Index, fieldName: String, fileSettings: FileSettings) {
         logger.debug("Adding external file field: [${index.name}] [$fieldName]")
+        val extDir = getDirForIndex(index)
+        Files.createDirectories(extDir)
+        val extFile = ExternalFile(
+                extDir, fieldName, index.name, fileSettings,
+                Loggers.getLogger(ExternalFile::class.java)
+        )
         val key = FileKey(index.name, fieldName)
         val existingFileField = this.files[key]
         if (existingFileField != null) {
-            if (existingFileField.file.settings != fileSettings) {
+            val currentFileSettings = existingFileField.file.settings
+            if (currentFileSettings.isUpdateChanged(fileSettings)) {
                 logger.debug("Cancelling update task: [${index.name}] [$fieldName]")
                 existingFileField.task.cancel()
                 this.files.remove(key)
             }
+            if (currentFileSettings.isStoreChanged(fileSettings)) {
+                this.values.compute(key) { _, _ ->
+                    extFile.loadValues(null)
+                }
+                this.files.computeIfPresent(key) { _, oldFileField ->
+                    ExternalFileField(extFile, oldFileField.task)
+                }
+            }
+        } else {
             this.values.computeIfAbsent(key) {
-                existingFileField.file.loadValues(null)
+                extFile.loadValues(null)
             }
         }
         this.files.computeIfAbsent(key) {
-            val extDir = getDirForIndex(index)
-            Files.createDirectories(extDir)
-            val extFile = ExternalFile(
-                    extDir, fieldName, index.name, fileSettings,
-                    Loggers.getLogger(ExternalFile::class.java)
-            )
             logger.debug("Scheduling update task every " +
                     "${fileSettings.updateInterval} seconds: [${index.name}] [$fieldName]")
             val future = threadPool.scheduleWithFixedDelay(
