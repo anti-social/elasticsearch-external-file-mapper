@@ -139,11 +139,17 @@ commands:
     run: /opt/devd/devd -p 8080 ./src/test/resources/indices
 
   test-func: !Supervise
+    options: |
+      Usage: vagga test-func [--no-daemon] [options]
+
+      Options:
+        --no-daemon  Run build without daemon
     children:
       web-server: *serve-test-files
       test: !Command
         <<: *cmd-opts
-        run: gradle testFunc
+        run: |
+            gradle testFunc $VAGGACLI_NO_DAEMON
 
   test: !Command
     <<: *cmd-opts
