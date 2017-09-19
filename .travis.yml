@@ -1,0 +1,27 @@
+os: linux
+dist: trusty
+sudo: required
+
+install:
+- sudo apt-get install -y uidmap
+- echo 'deb [arch=amd64 trusted=yes] https://ubuntu.zerogw.com vagga main' | sudo tee /etc/apt/sources.list.d/vagga.list
+- sudo apt-get update
+- sudo apt-get install vagga
+- |
+  echo "cache-dir: ~/.cache" >> ~/.vagga.yaml
+  echo "ubuntu-mirror: http://mirrors.us.kernel.org/ubuntu/" >> ~/.vagga.yaml
+  echo "alpine-mirror: http://mirrors.gigenet.com/alpinelinux/" >> ~/.vagga.yaml
+
+env:
+- TEST_SUITE=unit
+- TEST_SUITE=func
+- TEST_SUITE=integ
+
+before_script:
+- vagga _build kotlin-sdk
+- vagga assemble --no-daemon
+
+script:
+- |
+  set -ex
+  vagga test-$TEST_SUITE --no-daemon
