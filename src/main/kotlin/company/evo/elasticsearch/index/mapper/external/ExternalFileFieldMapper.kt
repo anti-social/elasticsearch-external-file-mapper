@@ -74,8 +74,8 @@ class ExternalFileFieldMapper(
     }
 
     data class TimeValueWithOriginal(
-            val timeValue: TimeValue,
-            val originalValue: Any
+            val time: TimeValue,
+            val original: Any
     ) {
         companion object {
             fun parse(value: Any, fieldName: String): TimeValueWithOriginal {
@@ -86,6 +86,38 @@ class ExternalFileFieldMapper(
                     TimeValue.parseTimeValue(valueStr, fieldName)
                 }
                 return TimeValueWithOriginal(timeValue, value)
+            }
+        }
+    }
+
+    data class TimeValueOrPercent(
+            private val percent: Long?,
+            private val time: TimeValue?,
+            val original: Any
+    ) {
+        companion object {
+            fun parse(value: Any, fieldName: String): TimeValueOrPercent {
+                val valueStr = value.toString()
+                return if (valueStr.endsWith("%")) {
+                    TimeValueOrPercent(valueStr.substring(0, valueStr.length - 1).toLong(), null, value)
+                } else {
+                    val timeValue = try {
+                        TimeValue.timeValueSeconds(valueStr.toLong())
+                    } catch (_: NumberFormatException) {
+                        TimeValue.parseTimeValue(valueStr, fieldName)
+                    }
+                    TimeValueOrPercent(null, timeValue, value)
+                }
+            }
+        }
+
+        fun getTimeValue(baseTimeValue: TimeValue): TimeValue {
+            return if (percent != null) {
+                TimeValue.timeValueSeconds(baseTimeValue.seconds * percent / 100)
+            } else if (time != null) {
+                time
+            } else {
+                throw IllegalStateException("Percent or time must be set")
             }
         }
     }
@@ -164,7 +196,8 @@ class ExternalFileFieldMapper(
                         entries.remove()
                     }
                     "update_scatter" -> {
-                        builder.updateScatter(value.toString())
+                        builder.updateScatter(
+                                TimeValueOrPercent.parse(value, "update_scatter"))
                         entries.remove()
                     }
                     "url" -> {
@@ -194,7 +227,7 @@ class ExternalFileFieldMapper(
         private var valuesStoreType: ValuesStoreType = DEFAULT_VALUES_STORE_TYPE
         private var scalingFactor: Long? = null
         private var updateInterval: TimeValueWithOriginal? = null
-        private var updateScatter: String? = null
+        private var updateScatter: TimeValueOrPercent? = null
         private var url: String? = null
         private var timeout: TimeValueWithOriginal? = null
 
@@ -213,18 +246,14 @@ class ExternalFileFieldMapper(
                     .get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
             val indexUuid = context.indexSettings()
                     .get(IndexMetaData.SETTING_INDEX_UUID)
-            val updateScatter = this.updateScatter
-            val updateIntervalScatter = if (updateScatter == null) {
-                0
-            } else if (updateScatter.endsWith("%")) {
-                updateInterval.timeValue.seconds /
-                        100 * updateScatter.substring(0, updateScatter.length - 1).toLong()
-            } else {
-                updateScatter.toLong()
-            }
+            val updateIntervalScatter = updateScatter?.getTimeValue(updateInterval.time)
             val fileSettings = FileSettings(
-                    valuesStoreType, updateInterval.timeValue.seconds, updateIntervalScatter,
-                    scalingFactor, url, timeout?.timeValue?.seconds?.toInt())
+                    valuesStoreType,
+                    updateInterval.time.seconds,
+                    updateIntervalScatter?.seconds,
+                    scalingFactor,
+                    url,
+                    timeout?.time?.seconds?.toInt())
             // There is no index when putting template
             if (indexName != null && indexUuid != null) {
                 ExternalFileService.instance.addField(
@@ -233,9 +262,9 @@ class ExternalFileFieldMapper(
             setupFieldType(context)
             fieldType().setFileSettings(
                     fileSettings,
-                    updateInterval.originalValue,
-                    updateScatter,
-                    timeout?.originalValue)
+                    updateInterval.original,
+                    updateScatter?.original,
+                    timeout?.original)
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
                     multiFieldsBuilder.build(this, context), copyTo)
@@ -255,7 +284,7 @@ class ExternalFileFieldMapper(
             return updateInterval
         }
 
-        fun updateScatter(scatter: String): Builder {
+        fun updateScatter(scatter: TimeValueOrPercent): Builder {
             this.updateScatter = scatter
             return this
         }

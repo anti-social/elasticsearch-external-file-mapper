@@ -107,7 +107,7 @@ class ExternalFileService : AbstractLifecycleComponent {
         }
         this.files.computeIfAbsent(key) {
             logger.debug("Scheduling update task every " +
-                    "${fileSettings.updateInterval} +/- ${fileSettings.updateScatter ?: 0 / 2} seconds: " +
+                    "${fileSettings.updateInterval} ± ${fileSettings.updateScatter ?: 0 / 2} seconds: " +
                     "[${index.name}] [$fieldName]")
             val future = ScatteredReschedulingRunnable(
                     ScheduleIntervals(
