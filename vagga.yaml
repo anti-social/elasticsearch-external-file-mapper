@@ -83,6 +83,11 @@ commands:
     description: Assembles the outputs of this project
     run: [gradle, assemble]
 
+  assemble-release: !Command
+    <<: *cmd-opts
+    description: Assembles the outputs of this project
+    run: [gradle, assemble, -Prelease]
+
   build: !Command
     <<: *cmd-opts
     description: Assembles and tests this project
