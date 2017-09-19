@@ -8,7 +8,8 @@ install:
 - sudo apt-get update
 - sudo apt-get install vagga
 - |
-  echo "cache-dir: ~/.cache" >> ~/.vagga.yaml
+  mkdir -p ~/.cache/vagga
+  echo "cache-dir: ~/.cache/vagga" >> ~/.vagga.yaml
   echo "ubuntu-mirror: http://mirrors.us.kernel.org/ubuntu/" >> ~/.vagga.yaml
   echo "alpine-mirror: http://mirrors.gigenet.com/alpinelinux/" >> ~/.vagga.yaml
 
@@ -25,3 +26,7 @@ script:
 - |
   set -ex
   vagga test-$TEST_SUITE --no-daemon
+
+cache:
+  directories:
+  - $HOME/.cache/vagga/gradle-cache
