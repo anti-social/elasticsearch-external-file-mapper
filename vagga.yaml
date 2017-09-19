@@ -98,12 +98,12 @@ commands:
     description: Compiles test source files
     run: [gradle, compileTestKotlin]
 
-  test: !Command
+  test-unit: !Command
     <<: *cmd-opts
     description: Runs unit tests
     run: [gradle, test]
 
-  integ-test: !Command
+  test-integ: !Command
     <<: *cmd-opts
     description: Runs integration tests
     run: [gradle, integTest, -Dtests.class=*.ExternalFieldMapperIT]
@@ -144,6 +144,16 @@ commands:
       test: !Command
         <<: *cmd-opts
         run: gradle testFunc
+
+  test: !Command
+    <<: *cmd-opts
+    description: "Run all tests: unit, functional and integration"
+    prerequisites:
+    - test-unit
+    - test-func
+    - test-integ
+    run: |
+      echo "All tests are passed"
 
   elastic: !Command
     description: Run elasticsearch
