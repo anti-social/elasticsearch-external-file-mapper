@@ -42,6 +42,8 @@ containers:
       path: /opt/devd
 
   elastic:
+    environ:
+      JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
     setup:
     - !Ubuntu xenial
     - !Install [ca-certificates]
@@ -55,7 +57,7 @@ containers:
     - !Env
       ES_SKIP_SET_KERNEL_PARAMETERS: true
     - !Install
-      - openjdk-8-jre-headless
+      - openjdk-8-jdk-headless
       - elasticsearch=5.5.2
     - !EnsureDir /var/elasticsearch
     volumes:
@@ -168,6 +170,11 @@ commands:
 
   elastic: !Command
     description: Run elasticsearch
+    options: |
+      Usage: vagga elastic [--with-jstatd]
+
+      Options:
+        --with-jstatd  Run jstatd in background
     container: elastic
     user-id: 1
     external-user-id: 0
@@ -176,6 +183,9 @@ commands:
     prerequisites: [assemble]
     run: |
       set -e
+      if [ -n "${VAGGAOPT_WITH_JSTATD}" ]; then
+        jstatd -J-Djava.security.policy=/work/jstatd.all.policy &
+      fi
       DISTRIBUTION_DIR=/work/build/distributions
       PLUGIN_PATH=$DISTRIBUTION_DIR/mapper-external-file-$(cat /work/project.version)-es5.5.2.zip
       /usr/share/elasticsearch/bin/elasticsearch-plugin install file:${PLUGIN_PATH}
