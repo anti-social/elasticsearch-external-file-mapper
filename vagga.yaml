@@ -173,8 +173,6 @@ commands:
     external-user-id: 0
     volumes:
       /usr/share/elasticsearch/plugins: !Tmpfs
-    environ:
-
     prerequisites: [assemble]
     run: |
       set -e
