@@ -174,6 +174,7 @@ class ExternalFile(
     }
 
     private fun parse(path: Path): ParsedValues {
+        val startAt = System.nanoTime()
         var maxKey = Long.MIN_VALUE
         var minValue = Double.POSITIVE_INFINITY
         var maxValue = Double.NEGATIVE_INFINITY
@@ -204,10 +205,13 @@ class ExternalFile(
                 }
             }
         }
+        val keysArray= keys.toLongArray()
+        val valuesArray = values.toDoubleArray()
+        val duration = (System.nanoTime() - startAt) / 1000_000
         logger.info("Parsed ${keys.size} values " +
                 "for [$name] field of [${indexName}] index " +
-                "from file [$path]")
-        return ParsedValues(keys.toLongArray(), values.toDoubleArray(),
+                "from file [$path] for ${duration}ms")
+        return ParsedValues(keysArray, valuesArray,
                 keys.size, maxKey, minValue, maxValue)
     }
 
