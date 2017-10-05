@@ -38,7 +38,7 @@ import org.hamcrest.Matchers.*
 import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
-import company.evo.elasticsearch.indices.MemoryIntShortFileValues
+import company.evo.elasticsearch.indices.LongLongFileValues
 import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
 
 
@@ -125,7 +125,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         val fileSettings = extFileService.getFileSettings(index, "ext_price")
         assertThat(fileSettings?.scalingFactor, equalTo(100L))
         assertThat(extFileService.getValues(index, "ext_price"),
-                `is`(instanceOf(MemoryIntShortFileValues::class.java)))
+                `is`(instanceOf(LongLongFileValues::class.java)))
 
         indexTestDocuments(indexName)
 

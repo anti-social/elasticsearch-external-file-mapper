@@ -19,6 +19,9 @@ import org.apache.http.impl.client.HttpClients
 import org.apache.logging.log4j.Logger
 import org.apache.logging.log4j.LogManager
 
+import org.mapdb.DBMaker
+import org.mapdb.Serializer
+
 import net.uaprom.htable.HashTable
 import net.uaprom.htable.TrieHashTable
 
@@ -247,38 +250,21 @@ class ExternalFile(
             lastModified: FileTime, scalingFactor: Long?): FileValues.Provider
     {
         val parsedValues = parse(getExternalFilePath())
+        val db = DBMaker.memoryDB().make()
         val valuesProvider = if (scalingFactor != null) {
             val minValue = (parsedValues.minValue * scalingFactor).toLong()
             val maxValue = (parsedValues.maxValue * scalingFactor).toLong()
-            if (parsedValues.maxKey < Int.MAX_VALUE) {
-                if (maxValue - minValue < Short.MAX_VALUE) {
-                    MemoryIntShortFileValues.Provider(
-                            parsedValues.keys, parsedValues.values,
-                            minValue, scalingFactor, lastModified)
-                } else if (maxValue - minValue < Int.MAX_VALUE) {
-                    MemoryIntIntFileValues.Provider(
-                            parsedValues.keys, parsedValues.values,
-                            minValue, scalingFactor, lastModified)
-                } else {
-                    MemoryIntDoubleFileValues.Provider(
-                            parsedValues.keys, parsedValues.values, lastModified)
-                }
-            } else {
-                if (maxValue - minValue < Short.MAX_VALUE) {
-                    MemoryLongShortFileValues.Provider(
-                            parsedValues.keys, parsedValues.values,
-                            minValue, scalingFactor, lastModified)
-                } else if (maxValue - minValue < Int.MAX_VALUE) {
-                    MemoryLongIntFileValues.Provider(
-                            parsedValues.keys, parsedValues.values,
-                            minValue, scalingFactor, lastModified)
-                } else {
-                    MemoryLongDoubleFileValues.Provider(
-                            parsedValues.keys, parsedValues.values, lastModified)
-                }
-            }
+            LongLongFileValues.Provider(
+                    db.treeMap(name)
+                            .keySerializer(Serializer.LONG)
+                            .valueSerializer(Serializer.LONG),
+                    parsedValues.keys, parsedValues.values,
+                    minValue, scalingFactor, lastModified)
         } else {
-            MemoryLongDoubleFileValues.Provider(
+            LongDoubleFileValues.Provider(
+                    db.treeMap(name)
+                            .keySerializer(Serializer.LONG)
+                            .valueSerializer(Serializer.DOUBLE),
                     parsedValues.keys, parsedValues.values, lastModified)
         }
         logger.debug("Values size is ${valuesProvider.sizeBytes} bytes")
