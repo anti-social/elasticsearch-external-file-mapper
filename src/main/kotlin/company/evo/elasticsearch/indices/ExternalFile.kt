@@ -175,25 +175,51 @@ class ExternalFile(
 
     private fun parse(path: Path): ParsedValues {
         val startAt = System.nanoTime()
+        val maxRows = Files.newBufferedReader(path).use {
+            var maxRows: Int? = null
+            val header = it.readLine().trim()
+            if (header.startsWith("#")) {
+                for (attr in header.split(' ')) {
+                    if (attr.isEmpty()) {
+                        continue
+                    }
+                    val pair = attr.split('=', limit = 2)
+                    if (pair.size == 2 && pair[0] == "rows") {
+                        maxRows = pair[1].toInt()
+                    }
+                }
+            }
+            maxRows
+        }
+
+        var numRows = 0
         var maxKey = Long.MIN_VALUE
         var minValue = Double.POSITIVE_INFINITY
         var maxValue = Double.NEGATIVE_INFINITY
-        val keys = ArrayList<Long>()
-        val values = ArrayList<Double>()
+        var keys = LongArray(maxRows ?: 1000)
+        var values = DoubleArray(maxRows ?: 1000)
         Files.newBufferedReader(path).use {
-            for (rawLine in it.lines()) {
-                val line = rawLine.trim()
-                if (line == "") {
-                    continue
-                }
-                if (line.startsWith("#")) {
-                    continue
+            it.lines()
+                    .map { it.trim() }
+                    .filter { !it.isEmpty() }
+                    .filter { !it.startsWith("#") }
+                    .iterator().withIndex().forEach {
+                val i = it.index
+                val line = it.value
+                if (maxRows == null) {
+                    if (i >= keys.size) {
+                        keys = keys.copyOf(keys.size * 2)
+                        values = values.copyOf(keys.size * 2)
+                    }
+                } else if (i >= maxRows) {
+                    return@forEach
                 }
                 val delimiterIx = line.indexOf('=')
                 val key = line.substring(0, delimiterIx).trim().toLong()
                 val value = line.substring(delimiterIx + 1).trim().toDouble()
-                keys.add(key)
-                values.add(value)
+                keys[i] = key
+                values[i] = value
+                numRows = i + 1
                 if (key > maxKey) {
                     maxKey = key
                 }
@@ -205,14 +231,16 @@ class ExternalFile(
                 }
             }
         }
-        val keysArray= keys.toLongArray()
-        val valuesArray = values.toDoubleArray()
+        if (maxRows == null) {
+            keys = keys.copyOf(numRows)
+            values = values.copyOf(numRows)
+        }
         val duration = (System.nanoTime() - startAt) / 1000_000
         logger.info("Parsed ${keys.size} values " +
                 "for [$name] field of [${indexName}] index " +
                 "from file [$path] for ${duration}ms")
-        return ParsedValues(keysArray, valuesArray,
-                keys.size, maxKey, minValue, maxValue)
+        return ParsedValues(keys, values,
+                numRows, maxKey, minValue, maxValue)
     }
 
     private fun getMemoryValuesProvider(
