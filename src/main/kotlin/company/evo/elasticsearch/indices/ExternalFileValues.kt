@@ -5,8 +5,7 @@ import java.nio.file.attribute.FileTime
 
 import gnu.trove.map.hash.*
 
-import net.uaprom.htable.HashTable
-import net.uaprom.htable.TrieHashTable
+import net.openhft.chronicle.map.ChronicleMap
 
 
 interface FileValues {
@@ -329,26 +328,32 @@ class MemoryIntShortFileValues(
     }
 }
 
-class MappedFileValues(
-        private val values: HashTable.Reader
+class ChronicleFileValues(
+        private val values: ChronicleMap<java.lang.Long, java.lang.Double>
 ) : FileValues {
 
+    private val valueRef = java.lang.Double(0.0)
+
     class Provider(
-            private val data: ByteBuffer,
+            private val values: ChronicleMap<java.lang.Long, java.lang.Double>,
             override val sizeBytes: Long,
             override val lastModified: FileTime
     ) : FileValues.Provider {
 
         override fun get(): FileValues {
-            return MappedFileValues(TrieHashTable.Reader(data.slice()))
+            return ChronicleFileValues(values)
         }
     }
 
     override fun get(key: Long, defaultValue: Double): Double {
-        return values.getDouble(key, defaultValue)
+        val res =  values.getUsing(java.lang.Long(key), valueRef)
+        if (res == null) {
+            return defaultValue
+        }
+        return res.toDouble()
     }
 
     override fun contains(key: Long): Boolean {
-        return values.exists(key)
+        return values.containsKey(java.lang.Long(key))
     }
 }

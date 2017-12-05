@@ -12,15 +12,18 @@ import java.nio.file.NoSuchFileException
 import java.util.*
 import java.util.stream.LongStream
 
+import net.openhft.chronicle.core.values.DoubleValue
+import net.openhft.chronicle.core.values.LongValue
+import net.openhft.chronicle.map.ChronicleMap
+import net.openhft.chronicle.map.ChronicleMapBuilder
+import net.openhft.chronicle.values.Values
+
 import org.apache.http.client.config.RequestConfig
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.impl.client.HttpClients
 
 import org.apache.logging.log4j.Logger
 import org.apache.logging.log4j.LogManager
-
-import net.uaprom.htable.HashTable
-import net.uaprom.htable.TrieHashTable
 
 
 const val MAP_LOAD_FACTOR: Float = 0.75F
@@ -294,26 +297,31 @@ class ExternalFile(
         }
         if (indexLastModified < lastModified) {
             val parsedValues = parse(getExternalFilePath())
-            val writer = TrieHashTable.Writer(
-                    HashTable.ValueSize.LONG, TrieHashTable.BitmaskSize.LONG)
-            val data = writer.dumpDoubles(parsedValues.keys, parsedValues.values)
             val tmpPath = Files.createTempFile(dir, name, null)
             try {
-                Files.newOutputStream(tmpPath).use {
-                    it.write(data)
+                ChronicleMap
+                        .of(java.lang.Long::class.java, java.lang.Double::class.java)
+                        .entries(parsedValues.keys.size * 2L)
+                        .createPersistedTo(tmpPath.toFile())
+                        .use { map ->
+                    parsedValues.keys.asSequence()
+                            .zip(parsedValues.values.asSequence())
+                            .forEach { (k, v) ->
+                                map.put(java.lang.Long(k), java.lang.Double(v))
+                            }
                 }
                 Files.move(tmpPath, indexFilePath, StandardCopyOption.ATOMIC_MOVE)
+                logger.debug("Dumped ${parsedValues.size} values " +
+                        "(${indexFilePath.toFile().length()} bytes) into file [${indexFilePath}]")
             } finally {
                 Files.deleteIfExists(tmpPath)
             }
-            logger.debug("Dumped ${parsedValues.size} values (${data.size} bytes) " +
-                    "into file [${indexFilePath}]")
         }
-        val (mappedData, dataSize) = FileChannel.open(indexFilePath, StandardOpenOption.READ).use {
-            Pair(it.map(FileChannel.MapMode.READ_ONLY, 0, it.size()), it.size())
-        }
+        val map = ChronicleMap
+                .of(java.lang.Long::class.java, java.lang.Double::class.java)
+                .recoverPersistedTo(indexFilePath.toFile(), false)
         logger.debug("Loaded values from file [$indexFilePath]")
-        return MappedFileValues.Provider(mappedData, dataSize, lastModified)
+        return ChronicleFileValues.Provider(map, map.offHeapMemoryUsed(), lastModified)
     }
 
     internal fun getCurrentVersion(): String? {
@@ -350,6 +358,6 @@ class ExternalFile(
     }
 
     internal fun getBinaryFilePath(): Path {
-        return dir.resolve("$name.amt")
+        return dir.resolve("$name.dat")
     }
 }

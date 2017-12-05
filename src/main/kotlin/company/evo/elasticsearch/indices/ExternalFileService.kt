@@ -19,6 +19,8 @@ package company.evo.elasticsearch.indices
 import java.lang.Exception
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.AccessController
+import java.security.PrivilegedAction
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -26,6 +28,7 @@ import org.apache.logging.log4j.Logger
 
 import org.apache.lucene.util.IOUtils
 
+import org.elasticsearch.SpecialPermission
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.logging.Loggers
@@ -77,6 +80,11 @@ class ExternalFileService : AbstractLifecycleComponent {
     @Synchronized
     fun addField(index: Index, fieldName: String, fileSettings: FileSettings) {
         logger.debug("Adding external file field: [${index.name}] [$fieldName]")
+
+        // unprivileged code such as scripts do not have SpecialPermission
+        val sm = System.getSecurityManager()
+        sm?.checkPermission(SpecialPermission())
+
         val extDir = getDirForIndex(index)
         Files.createDirectories(extDir)
         val extFile = ExternalFile(
@@ -94,7 +102,9 @@ class ExternalFileService : AbstractLifecycleComponent {
             }
             if (currentFileSettings.isStoreChanged(fileSettings)) {
                 this.values.compute(key) { _, _ ->
-                    extFile.loadValues(null)
+                    AccessController.doPrivileged(PrivilegedAction {
+                        extFile.loadValues(null)
+                    })
                 }
                 this.files.computeIfPresent(key) { _, oldFileField ->
                     ExternalFileField(extFile, oldFileField.task)
@@ -102,7 +112,9 @@ class ExternalFileService : AbstractLifecycleComponent {
             }
         } else {
             this.values.computeIfAbsent(key) {
-                extFile.loadValues(null)
+                AccessController.doPrivileged(PrivilegedAction {
+                    extFile.loadValues(null)
+                })
             }
         }
         this.files.computeIfAbsent(key) {
@@ -123,7 +135,9 @@ class ExternalFileService : AbstractLifecycleComponent {
                     extFile.download()
                 }
                 this.values.compute(key) { _, oldValues ->
-                    extFile.loadValues(oldValues?.lastModified) ?: oldValues
+                    AccessController.doPrivileged(PrivilegedAction {
+                        extFile.loadValues(oldValues?.lastModified) ?: oldValues
+                    })
                 }
                 logger.debug("Finished updating: [${index.name}] [$fieldName]")
             }

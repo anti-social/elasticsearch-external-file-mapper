@@ -1,0 +1,10 @@
+grant {
+  // needed for chronicle map
+  permission java.lang.RuntimePermission "accessClassInPackage.sun.misc";
+  permission java.lang.RuntimePermission "accessClassInPackage.sun.nio.ch";
+  permission java.lang.RuntimePermission "accessDeclaredMembers";
+  permission java.lang.RuntimePermission "shutdownHooks";
+  permission java.lang.reflect.ReflectPermission "suppressAccessChecks";
+  // FIXME Find a way to cheat net.openhft.chronicle.core.OS
+  permission java.io.FilePermission "<<ALL FILES>>", "read";
+};

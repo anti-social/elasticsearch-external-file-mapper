@@ -18,7 +18,7 @@ package company.evo.elasticsearch.index.mapper.external
 
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Collections
+import java.util.*
 
 import org.elasticsearch.client.Requests.searchRequest
 import org.elasticsearch.common.settings.Settings
@@ -40,6 +40,7 @@ import org.junit.Before
 import company.evo.elasticsearch.indices.ExternalFileService
 import company.evo.elasticsearch.indices.MemoryIntShortFileValues
 import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
+import org.elasticsearch.common.io.PathUtils
 
 
 @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.TEST, numDataNodes=0)
@@ -57,6 +58,8 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
 
     @Before
     fun setDirectories() {
+        val javaTmpDir = PathUtils.get(System.getProperty("java.io.tmpdir"))
+        Files.createDirectories(javaTmpDir.resolve("target"))
         val dataPath = createTempDir()
         val homePath = createTempDir()
         val settings = Settings.builder()

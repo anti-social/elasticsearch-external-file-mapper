@@ -113,7 +113,11 @@ commands:
   test-integ: !Command
     <<: *cmd-opts
     description: Runs integration tests
-    run: [gradle, integTest, -Dtests.class=*.ExternalFieldMapperIT]
+    run:
+    - gradle
+    - integTest
+    - -Djava.io.tmpdir=/tmp
+    - -Dtests.class=*.ExternalFieldMapperIT
 
   clean: !Command
     <<: *cmd-opts

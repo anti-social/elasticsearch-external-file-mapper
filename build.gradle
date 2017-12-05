@@ -43,7 +43,17 @@ dependencies {
     compile "org.apache.httpcomponents:httpclient:${versions.httpclient}"
     compile "commons-logging:commons-logging:${versions.commonslogging}"
     compile "net.sf.trove4j:trove4j:3.0.3"
-    compile project(':htable-java')
+    compile("net.openhft:chronicle-map:3.14.4")
+//    compile "net.openhft:third-party-bom:3.6.0"
+//    compile "net.openhft:chronicle-bom:1.14.127"
+    compile "net.openhft:chronicle-wire:1.10.1"
+    compile "net.openhft:chronicle-core:1.9.21"
+    compile "net.openhft:chronicle-algorithms:1.1.10"
+    compile "net.openhft:chronicle-bytes:1.10.1"
+    compile "net.openhft:chronicle-values:1.5.5"
+    compile "net.openhft:chronicle-threads:1.9.1"
+    compile "com.squareup:javapoet:1.5.1"
+    compile "org.slf4j:slf4j-api:1.7.25"
 }
 
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
@@ -57,3 +67,12 @@ task testFunc(type: Test) {
 }
 
 testFunc.outputs.upToDateWhen { false }
+
+tasks.integTestRunner.doFirst {
+    System.setProperty('user.dir', './temp')
+    println "user.dir: ${System.getProperty('user.dir')}"
+}
+//integTest {
+////    doFirst {
+////    }
+//}
