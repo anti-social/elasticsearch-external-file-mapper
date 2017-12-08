@@ -1,9 +1,6 @@
 package company.evo.elasticsearch.indices
 
-import java.nio.ByteBuffer
 import java.nio.file.attribute.FileTime
-
-import gnu.trove.map.hash.*
 
 import net.openhft.chronicle.map.ChronicleMap
 
@@ -28,18 +25,21 @@ class EmptyFileValues : FileValues {
     }
 }
 
-class MemoryLongDoubleFileValues(
-        private val values: TLongDoubleHashMap
+class LongDoubleFileValues private constructor(
+        private val values: ChronicleMap<java.lang.Long, java.lang.Double>
 ) : FileValues {
 
     class Provider : FileValues.Provider {
-        private val map: TLongDoubleHashMap
+        private val map: ChronicleMap<java.lang.Long, java.lang.Double>
         override val sizeBytes: Long
         override val lastModified: FileTime
 
         constructor(keys: LongArray, values: DoubleArray, lastModified: FileTime) {
-            this.map = TLongDoubleHashMap(
-                    (keys.size / MAP_LOAD_FACTOR).toInt(), MAP_LOAD_FACTOR, -1, Double.NaN)
+            val mapBuiler = ChronicleMap
+                    .of(java.lang.Long::class.java, java.lang.Double::class.java)
+                    .entries(keys.size * 2L)
+                    .createPersistedTo(tmpPath.toFile())
+//                    (keys.size / MAP_LOAD_FACTOR).toInt(), MAP_LOAD_FACTOR, -1, Double.NaN)
             for ((ix, k) in keys.withIndex()) {
                 this.map.put(k, values[ix])
             }
