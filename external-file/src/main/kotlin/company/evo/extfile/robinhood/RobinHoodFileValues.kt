@@ -1,101 +1,143 @@
 package company.evo.extfile.robinhood
 
+import java.lang.Math.abs
 import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import kotlin.math.abs
+
+//import kotlin.math.abs
 
 
-class RobinHoodHashtable(val keyType: KeyType, val valueType: ValueType, val capacity: Int) {
-    enum class KeyType(val size: Int, val missing: Long) {
-        LONG(8, Long.MIN_VALUE), INT(4, Int.MIN_VALUE.toLong());
-
-        fun offset(ix: Int): Int = size * ix
+class RobinHoodHashtable(
+//        val keyType: KeyType,
+//        val valueType: ValueType,
+        val maxEntries: Int
+) {
+    companion object {
+        val LOAD_FACTOR = 0.75
+        val META_PAGE_SIZE = 4096
+        val CATALOG_PAGE_SIZE = 4096
+        val CATALOG_ENTRY_SIZE = 4
+        val CATALOG_PAGE_ENTRIES = 1000
+        val CATALOG_FREE_ENTRIES = 24
+        val DATA_PAGE_SIZE = 4096
+        val DATA_ENTRY_SIZE = 8
+        val DATA_PAGE_ENTRIES = 509 // 8 byte entry
+        val CATALOG_ENTRIES = intArrayOf(
+                3, 7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431, 521, 631, 761, 919,
+                1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839, 7013, 8419, 10103, 12143, 14591,
+                17519, 21023, 25229, 30293, 36353, 43627, 52361, 62851, 75431, 90523, 108631, 130363, 156437,
+                187751, 225307, 270371, 324449, 389357, 467237, 560689, 672827, 807403, 968897, 1162687, 1395263,
+                1674319, 2009191, 2411033, 2893249, 3471899, 4166287, 4999559, 5999471, 7199369
+        )
     }
-    enum class ValueType(val size: Int) {
-        DOUBLE(8), FLOAT(4), INT(4), SHORT(2);
 
-        fun offset(ix: Int): Int = size * ix
-    }
-
-    private val keyBufferCapacity = capacity * keyType.size
-    private val valueBufferCapacity = capacity * valueType.size
-    private val keys = ByteBuffer.allocateDirect(keyBufferCapacity)
-            .order(ByteOrder.LITTLE_ENDIAN)
-    private val values = ByteBuffer.allocateDirect(valueBufferCapacity)
-            .order(ByteOrder.LITTLE_ENDIAN)
-
-    @Volatile
-    private var touch = 0
+    private val capacity = (maxEntries / LOAD_FACTOR).toInt()
+    private val dataPages = (capacity + DATA_PAGE_ENTRIES - 1) / DATA_PAGE_ENTRIES
+    private val minCatalogPages = (dataPages + CATALOG_PAGE_ENTRIES - 1) / CATALOG_PAGE_ENTRIES
+    private val catalogPages = CATALOG_ENTRIES.first { it >= minCatalogPages }
+    private val freeDataPages = catalogPages * CATALOG_FREE_ENTRIES
+    private val allDataPages = dataPages + freeDataPages
+    private val dataPagesOffset = META_PAGE_SIZE + catalogPages * CATALOG_PAGE_SIZE
+    private val buffer = ByteBuffer.allocateDirect(
+            dataPagesOffset + dataPages * DATA_PAGE_SIZE
+    )
 
     init {
-        when (keyType) {
-            KeyType.LONG -> (0 until capacity).forEach { ix ->
-                putKey(ix, Long.MIN_VALUE)
-            }
-            KeyType.INT -> (0 until capacity).forEach { ix ->
-                putKey(ix, Int.MIN_VALUE.toLong())
-            }
+        buffer.position(META_PAGE_SIZE)
+        (0 until allDataPages).forEach { dataPageIx ->
+            buffer.putInt(dataPageIx)
         }
     }
 
-    private fun putKey(ix: Int, key: Long) = when(keyType) {
-        KeyType.LONG -> keys.putLong(keyType.offset(ix), key)
-        KeyType.INT -> keys.putInt(keyType.offset(ix), key.toInt())
+    private fun nextCatalogEntryIx(key: Int, i: Int): Int {
+        return (key + i * 2309) % dataPages
     }
 
-    private fun getKey(ix: Int): Long = when(keyType) {
-        KeyType.LONG -> keys.getLong(keyType.offset(ix))
-        KeyType.INT -> keys.getInt(keyType.offset(ix)).toLong()
+    private fun nextEntryIx(key: Int, i: Int): Int {
+        return (key + i) % DATA_PAGE_ENTRIES
     }
 
-    private fun putValue(ix: Int, value: Double) = when(valueType) {
-        ValueType.DOUBLE -> values.putDouble(valueType.offset(ix), value)
-        ValueType.FLOAT -> values.putFloat(valueType.offset(ix), value.toFloat())
-        ValueType.INT -> values.putInt(valueType.offset(ix), value.toInt())
-        ValueType.SHORT -> values.putShort(valueType.offset(ix), value.toShort())
-    }
+    fun put(key: Int, value: Short) {
+        // TODO Check max entries
+        val k = abs(key)
 
-    private fun getValue(ix: Int): Double = when(valueType) {
-        ValueType.DOUBLE -> values.getDouble(valueType.offset(ix))
-        ValueType.FLOAT -> values.getFloat(valueType.offset(ix)).toDouble()
-        ValueType.INT -> values.getInt(valueType.offset(ix)).toDouble()
-        ValueType.SHORT -> values.getShort(valueType.offset(ix)).toDouble()
-    }
-
-    private fun nextIx(ix: Int): Int {
-        var nextIx = ix + 1
-        if (nextIx >= capacity - 1) {
-            nextIx = 0
-        }
-        return nextIx
-    }
-
-    fun put(key: Long, value: Double) {
-        var ix = abs(key % capacity).toInt()
-        do {
-            val k = getKey(ix)
-            ix = nextIx(ix)
-        } while (k != keyType.missing)
-        putValue(ix, value)
-        putKey(ix, key)
-    }
-
-    fun get(key: Long, defaultValue: Double): Double {
-//        if (touch != 0)
-//            return defaultValue
-        var ix = abs(key % capacity).toInt()
+        val dataPage: Int
+        var i = 0
+        var catalogEntryIx = k % dataPages
         while (true) {
-            val k = getKey(ix)
-            if (k == keyType.missing) {
-                return defaultValue
-            } else if (k == key) {
-                return getValue(ix)
+            val catalogPage = catalogEntryIx / CATALOG_PAGE_ENTRIES
+            val catalogPageOffset = catalogPage * CATALOG_PAGE_SIZE
+            val catalogEntry = catalogEntryIx % CATALOG_PAGE_ENTRIES
+            val catalogEntryOffset = catalogEntry * CATALOG_ENTRY_SIZE
+            val catalogEntryData = buffer.getInt(
+                    META_PAGE_SIZE + catalogPageOffset + catalogEntryOffset
+            )
+            val isDataPageFull = (catalogEntryData ushr 31) > 0
+            if (!isDataPageFull) {
+                dataPage = catalogEntryData and 0x7FFFFFFF
+                break
             }
-            ix = nextIx(ix)
+            i += 1
+            catalogEntryIx = nextCatalogEntryIx(k, i)
         }
+
+        val dataPageOffset = dataPagesOffset + dataPage * DATA_PAGE_SIZE
+
+        var entryIx = k % DATA_PAGE_ENTRIES
+        var j = 0
+        while (true) {
+            val entryOffset = dataPageOffset + entryIx * DATA_ENTRY_SIZE
+            val entry = buffer.getLong(entryOffset)
+            val isOccupied = (entry and 0xFFFF_0000) != 0L
+            if (!isOccupied) {
+                buffer.putLong(entryOffset, (key.toLong() shl 32) and (value.toLong() or 0x8000_0000))
+                break
+            }
+            j += 1
+            entryIx = nextEntryIx(k, j)
+        }
+
+
+//        var ix = abs(key % capacity).toInt()
+//        do {
+//            val k = getKey(ix)
+//            ix = nextIx(ix)
+//        } while (k != keyType.missing)
+//        putValue(ix, value)
+//        putKey(ix, key)
+    }
+
+    fun get(key: Int, defaultValue: Short): Short {
+        val k = abs(key)
+
+        var dataPage: Int
+        var i = 0
+        var catalogEntryIx = k % dataPages
+        while (true) {
+            val catalogPage = catalogEntryIx / CATALOG_PAGE_ENTRIES
+            val catalogPageOffset = catalogPage * CATALOG_PAGE_SIZE
+            val catalogEntry = catalogEntryIx % CATALOG_PAGE_ENTRIES
+            val catalogEntryOffset = catalogEntry * CATALOG_ENTRY_SIZE
+            val catalogEntryData = buffer.getInt(
+                    META_PAGE_SIZE + catalogPageOffset + catalogEntryOffset
+            )
+            dataPage = catalogEntryData and 0x00FF_FFFF
+            findInsideDataPage(dataPage, k)
+            val isDataPageFull = (catalogEntryData ushr 31) > 0
+            if (!isDataPageFull) {
+                break
+            }
+            i += 1
+            catalogEntryIx = nextCatalogEntryIx(k, i)
+        }
+
+        val dataPageOffset = dataPagesOffset + dataPage * DATA_PAGE_SIZE
+    }
+
+    private fun findInsideDataPage(dataPage: Int, key: Int): Short {
+
     }
 }
 
-class LongDoubleFileValues(
-
-)
+//class LongDoubleFileValues(
+//
+//)
