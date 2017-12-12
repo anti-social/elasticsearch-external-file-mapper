@@ -1,29 +1,23 @@
-package company.evo.elasticsearch.indices
+package company.evo.extfile
 
 import java.io.IOException
 import java.net.SocketTimeoutException
-import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.FileTime
 import java.nio.file.NoSuchFileException
 import java.util.*
 import java.util.stream.LongStream
 
-import net.openhft.chronicle.core.values.DoubleValue
-import net.openhft.chronicle.core.values.LongValue
-import net.openhft.chronicle.map.ChronicleMap
-import net.openhft.chronicle.map.ChronicleMapBuilder
-import net.openhft.chronicle.values.Values
-
 import org.apache.http.client.config.RequestConfig
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.impl.client.HttpClients
 
-import org.apache.logging.log4j.Logger
-import org.apache.logging.log4j.LogManager
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+
+import company.evo.extfile.trove.create as troveCreate
 
 
 const val MAP_LOAD_FACTOR: Float = 0.75F
@@ -38,10 +32,12 @@ enum class ValuesStoreType {
     FILE,
 }
 
-class ScheduleIntervals {
+class ScheduleIntervals(
+        initialInterval: Long, interval: Long, scatter: Long
+) {
     private val intervals: Iterator<Long>
 
-    constructor(initialInterval: Long, interval: Long, scatter: Long) {
+    init {
         val halfScatter = scatter / 2
         val minInitialInterval = maxOf(initialInterval - halfScatter, 0)
         val firstInterval = Random()
@@ -61,7 +57,7 @@ class ScheduleIntervals {
 }
 
 data class FileSettings(
-        val valuesStoreType: ValuesStoreType,
+        val backend: FileValues.Backend,
         val updateInterval: Long,
         val updateScatter: Long?,
         val scalingFactor: Long?,
@@ -75,9 +71,9 @@ data class FileSettings(
                 other.timeout != timeout
     }
 
-    fun isStoreChanged(other: FileSettings): Boolean {
+    fun isStoreBackendChanged(other: FileSettings): Boolean {
         return other.scalingFactor != scalingFactor ||
-                other.valuesStoreType != valuesStoreType
+                other.backend != backend
     }
 }
 
@@ -85,20 +81,9 @@ class ExternalFile(
         private val dir: Path,
         private val name: String,
         private val indexName: String,
-        val settings: FileSettings,
-        private val logger: Logger)
-{
-    private class ParsedValues(
-            val keys: LongArray,
-            val values: DoubleArray,
-            val size: Int,
-            val maxKey: Long,
-            val minValue: Double,
-            val maxValue: Double
-    )
-
-    constructor(dir: Path, name: String, indexName: String, settings: FileSettings) :
-            this(dir, name, indexName, settings, LogManager.getLogger(ExternalFile::class.java))
+        val settings: FileSettings
+) {
+    private val logger = LoggerFactory.getLogger(ExternalFile::class.java)
 
     fun download(): Boolean {
         val requestConfigBuilder = RequestConfig.custom()
@@ -159,15 +144,9 @@ class ExternalFile(
         try {
             val fileLastModified = Files.getLastModifiedTime(extFilePath)
             if (fileLastModified > (lastModified ?: FileTime.fromMillis(0))) {
-                return when (settings.valuesStoreType) {
-                    ValuesStoreType.RAM -> {
-                        getMemoryValuesProvider(
-                                fileLastModified, settings.scalingFactor)
-                    }
-                    ValuesStoreType.FILE -> {
-                        getMappedFileValuesProvider(fileLastModified)
-                    }
-                }
+                return getValuesProvider(
+                        fileLastModified
+                )
             }
         } catch (e: NoSuchFileException) {
         } catch (e: IOException) {
@@ -176,7 +155,9 @@ class ExternalFile(
         return null
     }
 
-    private fun parse(path: Path): ParsedValues {
+//    private fun parseHeader(path: Path) {}
+
+    private fun parse(path: Path, valuesProvider: FileValues.Provider) {
         val startAt = System.nanoTime()
         val maxRows = Files.newBufferedReader(path).use {
             var maxRows: Int? = null
@@ -192,137 +173,82 @@ class ExternalFile(
                     }
                 }
             }
-            maxRows
+            maxRows ?: Int.MAX_VALUE
         }
 
-        var numRows = 0
-        var maxKey = Long.MIN_VALUE
-        var minValue = Double.POSITIVE_INFINITY
-        var maxValue = Double.NEGATIVE_INFINITY
-        var keys = LongArray(maxRows ?: 1000)
-        var values = DoubleArray(maxRows ?: 1000)
+        var processedRows = 0
         Files.newBufferedReader(path).use {
             it.lines()
                     .map { it.trim() }
                     .filter { !it.isEmpty() }
                     .filter { !it.startsWith("#") }
                     .iterator().withIndex().forEach {
-                val i = it.index
                 val line = it.value
-                if (maxRows == null) {
-                    if (i >= keys.size) {
-                        keys = keys.copyOf(keys.size * 2)
-                        values = values.copyOf(keys.size * 2)
-                    }
-                } else if (i >= maxRows) {
+                if (processedRows >= maxRows) {
                     return@forEach
                 }
                 val delimiterIx = line.indexOf('=')
                 val key = line.substring(0, delimiterIx).trim().toLong()
-                val value = line.substring(delimiterIx + 1).trim().toDouble()
-                keys[i] = key
-                values[i] = value
-                numRows = i + 1
-                if (key > maxKey) {
-                    maxKey = key
+                val valueStr = line.substring(delimiterIx + 1).trim()
+                if (valueStr.isEmpty()) {
+                    valuesProvider.remove(key)
+                } else {
+                    valuesProvider.put(key, valueStr.toDouble())
                 }
-                if (value < minValue) {
-                    minValue = value
-                }
-                if (value > maxValue) {
-                    maxValue = value
-                }
+                processedRows++
             }
-        }
-        if (maxRows == null) {
-            keys = keys.copyOf(numRows)
-            values = values.copyOf(numRows)
         }
         val duration = (System.nanoTime() - startAt) / 1000_000
-        logger.info("Parsed ${keys.size} values " +
+        logger.info("Parsed ${processedRows} values " +
                 "for [$name] field of [${indexName}] index " +
                 "from file [$path] for ${duration}ms")
-        return ParsedValues(keys, values,
-                numRows, maxKey, minValue, maxValue)
     }
 
-    private fun getMemoryValuesProvider(
-            lastModified: FileTime, scalingFactor: Long?): FileValues.Provider
+    private fun getValuesProvider(
+            lastModified: FileTime): FileValues.Provider
     {
-        val parsedValues = parse(getExternalFilePath())
-        val valuesProvider = if (scalingFactor != null) {
-            val minValue = (parsedValues.minValue * scalingFactor).toLong()
-            val maxValue = (parsedValues.maxValue * scalingFactor).toLong()
-            if (parsedValues.maxKey < Int.MAX_VALUE) {
-                if (maxValue - minValue < Short.MAX_VALUE) {
-                    MemoryIntShortFileValues.Provider(
-                            parsedValues.keys, parsedValues.values,
-                            minValue, scalingFactor, lastModified)
-                } else if (maxValue - minValue < Int.MAX_VALUE) {
-                    MemoryIntIntFileValues.Provider(
-                            parsedValues.keys, parsedValues.values,
-                            minValue, scalingFactor, lastModified)
-                } else {
-                    MemoryIntDoubleFileValues.Provider(
-                            parsedValues.keys, parsedValues.values, lastModified)
-                }
-            } else {
-                if (maxValue - minValue < Short.MAX_VALUE) {
-                    MemoryLongShortFileValues.Provider(
-                            parsedValues.keys, parsedValues.values,
-                            minValue, scalingFactor, lastModified)
-                } else if (maxValue - minValue < Int.MAX_VALUE) {
-                    MemoryLongIntFileValues.Provider(
-                            parsedValues.keys, parsedValues.values,
-                            minValue, scalingFactor, lastModified)
-                } else {
-                    MemoryLongDoubleFileValues.Provider(
-                            parsedValues.keys, parsedValues.values, lastModified)
-                }
-            }
-        } else {
-            MemoryLongDoubleFileValues.Provider(
-                    parsedValues.keys, parsedValues.values, lastModified)
-        }
-        logger.debug("Values size is ${valuesProvider.sizeBytes} bytes")
+        val config = FileValues.Config()
+        val valuesProvider = troveCreate(config, lastModified)
+        parse(getExternalFilePath(), valuesProvider)
+        logger.debug("Values capacity is ${valuesProvider.sizeBytes} bytes")
         return valuesProvider
     }
 
-    private fun getMappedFileValuesProvider(lastModified: FileTime): FileValues.Provider {
-        val indexFilePath = getBinaryFilePath()
-        val indexLastModified = try {
-            Files.getLastModifiedTime(indexFilePath)
-        } catch (e: NoSuchFileException) {
-            FileTime.fromMillis(0)
-        }
-        if (indexLastModified < lastModified) {
-            val parsedValues = parse(getExternalFilePath())
-            val tmpPath = Files.createTempFile(dir, name, null)
-            try {
-                ChronicleMap
-                        .of(java.lang.Long::class.java, java.lang.Double::class.java)
-                        .entries(parsedValues.keys.size * 2L)
-                        .createPersistedTo(tmpPath.toFile())
-                        .use { map ->
-                    parsedValues.keys.asSequence()
-                            .zip(parsedValues.values.asSequence())
-                            .forEach { (k, v) ->
-                                map.put(java.lang.Long(k), java.lang.Double(v))
-                            }
-                }
-                Files.move(tmpPath, indexFilePath, StandardCopyOption.ATOMIC_MOVE)
-                logger.debug("Dumped ${parsedValues.size} values " +
-                        "(${indexFilePath.toFile().length()} bytes) into file [${indexFilePath}]")
-            } finally {
-                Files.deleteIfExists(tmpPath)
-            }
-        }
-        val map = ChronicleMap
-                .of(java.lang.Long::class.java, java.lang.Double::class.java)
-                .recoverPersistedTo(indexFilePath.toFile(), false)
-        logger.debug("Loaded values from file [$indexFilePath]")
-        return ChronicleFileValues.Provider(map, map.offHeapMemoryUsed(), lastModified)
-    }
+//    private fun getMappedFileValuesProvider(lastModified: FileTime): FileValues.Provider {
+//        val indexFilePath = getBinaryFilePath()
+//        val indexLastModified = try {
+//            Files.getLastModifiedTime(indexFilePath)
+//        } catch (e: NoSuchFileException) {
+//            FileTime.fromMillis(0)
+//        }
+//        if (indexLastModified < lastModified) {
+//            val parsedValues = parse(getExternalFilePath())
+//            val tmpPath = Files.createTempFile(dir, name, null)
+//            try {
+//                ChronicleMap
+//                        .of(java.lang.Long::class.java, java.lang.Double::class.java)
+//                        .entries(parsedValues.keys.capacity * 2L)
+//                        .createPersistedTo(tmpPath.toFile())
+//                        .use { map ->
+//                    parsedValues.keys.asSequence()
+//                            .zip(parsedValues.values.asSequence())
+//                            .forEach { (k, v) ->
+//                                map.put(java.lang.Long(k), java.lang.Double(v))
+//                            }
+//                }
+//                Files.move(tmpPath, indexFilePath, StandardCopyOption.ATOMIC_MOVE)
+//                logger.debug("Dumped ${parsedValues.capacity} values " +
+//                        "(${indexFilePath.toFile().length()} bytes) into file [${indexFilePath}]")
+//            } finally {
+//                Files.deleteIfExists(tmpPath)
+//            }
+//        }
+//        val map = ChronicleMap
+//                .of(java.lang.Long::class.java, java.lang.Double::class.java)
+//                .recoverPersistedTo(indexFilePath.toFile(), false)
+//        logger.debug("Loaded values from file [$indexFilePath]")
+//        return LongDoubleFileValues.Provider(map, map.offHeapMemoryUsed(), lastModified)
+//    }
 
     internal fun getCurrentVersion(): String? {
         val versionPath = getVersionFilePath()

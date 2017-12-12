@@ -11,9 +11,12 @@ buildscript {
 }
 
 plugins {
-    id 'org.jetbrains.kotlin.jvm' version '1.1.3-2'
+    id 'org.jetbrains.kotlin.jvm' version '1.2.0'
 }
 
+allprojects {
+    apply plugin: 'kotlin'
+}
 apply plugin: 'idea'
 apply plugin: 'elasticsearch.esplugin'
 
@@ -37,36 +40,28 @@ repositories {
     mavenCentral()
 }
 
-dependencies {
-    compile "org.jetbrains.kotlin:kotlin-stdlib"
-    compile "org.apache.httpcomponents:httpcore:${versions.httpcore}"
-    compile "org.apache.httpcomponents:httpclient:${versions.httpclient}"
-    compile "commons-logging:commons-logging:${versions.commonslogging}"
-    compile "net.sf.trove4j:trove4j:3.0.3"
-    compile("net.openhft:chronicle-map:3.14.4")
-//    compile "net.openhft:third-party-bom:3.6.0"
-//    compile "net.openhft:chronicle-bom:1.14.127"
-    compile "net.openhft:chronicle-wire:1.10.1"
-    compile "net.openhft:chronicle-core:1.9.21"
-    compile "net.openhft:chronicle-algorithms:1.1.10"
-    compile "net.openhft:chronicle-bytes:1.10.1"
-    compile "net.openhft:chronicle-values:1.5.5"
-    compile "net.openhft:chronicle-threads:1.9.1"
-    compile "com.squareup:javapoet:1.5.1"
-    compile "org.slf4j:slf4j-api:1.7.25"
-}
+subprojects {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        compile "org.jetbrains.kotlin:kotlin-stdlib"
+        compile "org.apache.httpcomponents:httpcore:${versions.httpcore}"
+        compile "org.apache.httpcomponents:httpclient:${versions.httpclient}"
+//        compile "commons-logging:commons-logging:${versions.commonslogging}"
+    }
 
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
-    kotlinOptions {
-        jvmTarget = '1.8'
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
+        kotlinOptions {
+            jvmTarget = '1.8'
+        }
     }
 }
 
-task testFunc(type: Test) {
-    include '**/*TestCase.class'
+dependencies {
+    compile "org.jetbrains.kotlin:kotlin-stdlib"
+    compile "commons-logging:commons-logging:${versions.commonslogging}"
 }
-
-testFunc.outputs.upToDateWhen { false }
 
 tasks.integTestRunner.doFirst {
     System.setProperty('user.dir', './temp')

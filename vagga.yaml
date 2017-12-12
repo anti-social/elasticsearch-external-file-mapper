@@ -1,15 +1,16 @@
 _default:
   gradle-home: &gradle-home /work/.gradle
   cmd-opts: &cmd-opts
-    container: kotlin-sdk
+    container: jdk8
     user-id: 1
     external-user-id: 0
     prerequisites: [_mk-gradle-user-home]
     volumes:
+      /tmp: !Tmpfs {size: 1Gi}
       /work/.gradle/caches: !CacheDir gradle-cache
 
 containers:
-  kotlin-sdk:
+  jdk8:
     environ:
       JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
       GRADLE_USER_HOME: *gradle-home
@@ -19,18 +20,28 @@ containers:
       - openjdk-8-jdk-headless
     - !EnsureDir /opt/gradle
     - !Unzip
-      url: https://services.gradle.org/distributions/gradle-4.0-bin.zip
-      sha256: 56bd2dde29ba2a93903c557da1745cafd72cdd8b6b0b83c05a40ed7896b79dfe
-      subdir: gradle-4.0
+      url: https://services.gradle.org/distributions/gradle-4.3-bin.zip
+      subdir: gradle-4.3
       path: /opt/gradle
     - !Sh ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle
-    - !EnsureDir /opt/kotlinc
+
+  jdk9:
+    environ:
+      JAVA_HOME: /usr/lib/jvm/java-9-openjdk-amd64
+      GRADLE_USER_HOME: *gradle-home
+    setup:
+    - !Ubuntu xenial
+    - !AptTrust
+      keys: [4AB0F789CBA31744CC7DA76A8CF63AD3F06FC659]
+    - !UbuntuPPA jonathonf/openjdk
+    - !Install
+      - openjdk-9-jdk-headless
+    - !EnsureDir /opt/gradle
     - !Unzip
-      url: https://github.com/JetBrains/kotlin/releases/download/v1.1.4/kotlin-compiler-1.1.4.zip
-      sha256: 53b25b6310bed62865cbc5f7b87866a53577d0430df2e995783256bfcba05d91
-      subdir: kotlinc
-      path: /opt/kotlinc
-    - !Sh ln -s /opt/kotlinc/bin/kotlinc /usr/local/bin/kotlinc
+      url: https://services.gradle.org/distributions/gradle-4.3-bin.zip
+      subdir: gradle-4.3
+      path: /opt/gradle
+    - !Sh ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle
 
   web-server:
     setup:
@@ -66,7 +77,7 @@ containers:
 
 commands:
   _mk-gradle-user-home: !Command
-    container: kotlin-sdk
+    container: jdk8
     run: mkdir -p $GRADLE_USER_HOME/caches
 
   daemon: !Command
@@ -134,6 +145,12 @@ commands:
     description: Runs arbitrary gradle task
     run: [gradle]
 
+  gradle-jdk9: !Command
+    <<: *cmd-opts
+    container: jdk9
+    description: Runs arbitrary gradle task
+    run: [gradle]
+
   kotlinc: !Command
     <<: *cmd-opts
     description: Runs kotlin compiler
@@ -147,7 +164,7 @@ commands:
   serve-test-files: &serve-test-files !Command
     description: Runs web server that serves files for tests
     container: web-server
-    run: /opt/devd/devd -p 8080 ./src/test/resources/indices
+    run: /opt/devd/devd -p 8088 ./src/test/resources/indices
 
   test-func: !Supervise
     options: |
@@ -160,7 +177,7 @@ commands:
       test: !Command
         <<: *cmd-opts
         run: |
-            gradle testFunc $VAGGACLI_NO_DAEMON
+            gradle -p external-file testFunc $VAGGACLI_NO_DAEMON
 
   test: !Command
     <<: *cmd-opts
