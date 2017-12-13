@@ -1,15 +1,60 @@
 package company.evo.extfile.robinhood
 
 import io.kotlintest.matchers.*
+import io.kotlintest.properties.*
 import io.kotlintest.specs.StringSpec
+import java.util.*
+import kotlin.collections.HashMap
 
 
 class RobinHoodHashMapTests : StringSpec() {
-    init {
-        "test" {
-            val map = RobinHoodHashtable(1000)
-            map.put(2, 4)
-            // map.get(2, 0) shouldBe 4
+    companion object {
+        private val RANDOM = Random()
+
+        fun short() = object : Gen<Short> {
+            override fun generate(): Short = RANDOM.nextInt().toShort()
         }
+    }
+
+    init {
+        "test single put then get" {
+            forAll(Gen.int(), short(), { key: Int, value: Short ->
+                val v = value.toShort()
+                val map = RobinHoodHashtable(100)
+                map.put(key, v)
+                map.get(key, 0) == v
+            })
+        }
+                .config(enabled = false)
+
+        "test" {
+            val map = RobinHoodHashtable(1_500_000)
+            map.put(1462148595, -3990)
+        }
+                .config(enabled = false)
+
+        "write one million random entries, then read them" {
+            val map = RobinHoodHashtable(1_500_000)
+            val limit = 1_000_000L
+            val keys = RANDOM
+                    .ints()
+                    .limit(limit)
+                    .toArray()
+            val values = RANDOM
+                    .ints(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                    .limit(limit)
+                    .toArray()
+            val entries = hashMapOf<Int, Short>()
+            keys.withIndex().forEach { (i, k) ->
+                val v = values[i].toShort()
+                map.put(k, v)
+                entries.put(k, v)
+            }
+
+            entries.forEach { (k, v) ->
+                map.get(k, Short.MIN_VALUE) shouldBe v
+            }
+        }
+//                .config(enabled = false)
     }
 }

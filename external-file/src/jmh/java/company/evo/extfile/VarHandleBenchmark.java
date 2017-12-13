@@ -13,7 +13,7 @@ package company.evo.extfile;
 //public class VarHandleBenchmark {
 //    static final int ENTRIES = 10_000_000;
 //    static final int[] ixs = new Random().ints(0, ENTRIES).limit(1000).toArray();
-//    static final double[] doubles = new Random().doubles().limit(ENTRIES).toArray();
+//    static final double[] doubleValues = new Random().doubleValues().limit(ENTRIES).toArray();
 //
 //    @State(Scope.Benchmark)
 //    public static class IntVarHandleState {

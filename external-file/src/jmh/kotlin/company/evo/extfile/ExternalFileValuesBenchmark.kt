@@ -15,8 +15,10 @@ const val ENTRIES = 10_000_000
 open class ExternalFileValuesBenchmarks {
     companion object {
         val ixs = Random().ints(0, ENTRIES).limit(1000).toArray()
-        val longs = Random().longs(0, Long.MAX_VALUE).limit(ENTRIES.toLong()).toArray()
-        val doubles = Random().doubles().limit(ENTRIES.toLong()).toArray()
+        val longsKeys = Random().longs(0, Long.MAX_VALUE).limit(ENTRIES.toLong()).toArray()
+        val intKeys = Random().ints(Int.MIN_VALUE, Int.MAX_VALUE).limit(ENTRIES.toLong()).toArray()
+        val doubleValues = Random().doubles().limit(ENTRIES.toLong()).toArray()
+        val shortValues = Random().ints(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).limit(ENTRIES.toLong()).toArray()
     }
 
     open class BaseValuesState {
@@ -25,8 +27,8 @@ open class ExternalFileValuesBenchmarks {
         fun populateValues(backend: FileValues.Backend, config: FileValues.Config) {
             val provider = FileValues
                     .create(backend, config, FileTime.fromMillis(0))
-            longs.withIndex().forEach { (ix, k) ->
-                provider.put(k, doubles[ix])
+            longsKeys.withIndex().forEach { (ix, k) ->
+                provider.put(k, doubleValues[ix])
             }
             values = provider.values
         }
@@ -42,6 +44,8 @@ open class ExternalFileValuesBenchmarks {
 
         @Setup(Level.Trial)
         fun setup() {
+//            val keyType = FileValues.Config.KeyType.INT
+//            val valueType = FileValues.Config.ValueType.SHORT
             val config = FileValues.Config(
                     keyType, valueType
             )
@@ -63,8 +67,8 @@ open class ExternalFileValuesBenchmarks {
             config.set("entries", (ENTRIES * 2).toString())
             val provider = FileValues
                     .create(FileValues.Backend.CHRONICLE, config, FileTime.fromMillis(0))
-            longs.withIndex().forEach { (ix, k) ->
-                provider.put(k, doubles[ix])
+            longsKeys.withIndex().forEach { (ix, k) ->
+                provider.put(k, doubleValues[ix])
             }
             values = provider.values
         }
@@ -81,8 +85,8 @@ open class ExternalFileValuesBenchmarks {
             val config = FileValues.Config()
             config.set("map_size", (ENTRIES * 100).toString())
             val provider = LmdbFileValues.Provider(config, FileTime.fromMillis(0))
-            longs.withIndex().forEach { (ix, k) ->
-                provider.put(k, doubles[ix])
+            longsKeys.withIndex().forEach { (ix, k) ->
+                provider.put(k, doubleValues[ix])
             }
             provider.finalize()
             values = provider.values
@@ -97,7 +101,7 @@ open class ExternalFileValuesBenchmarks {
         fun setup() {
             values = ByteBuffer.allocateDirect(ENTRIES * 8)
                     .order(ByteOrder.LITTLE_ENDIAN)
-            doubles.forEach { v ->
+            doubleValues.forEach { v ->
                 values.putDouble(v)
             }
         }
@@ -112,35 +116,36 @@ open class ExternalFileValuesBenchmarks {
             values = ByteBuffer.allocate(ENTRIES * 8)
                     .order(ByteOrder.LITTLE_ENDIAN)
                     .asIntBuffer()
-            doubles.forEach { v ->
+            doubleValues.forEach { v ->
                 values.put(v.toInt())
             }
         }
     }
 
-    //    @Benchmark
+//    @Benchmark
     fun benchmarkTroveFileValues(state: TroveState, blackhole: Blackhole) {
         for (ix in ixs) {
             blackhole.consume(
-                    state.values.get(longs[ix], 0.0)
+                    state.values.get(longsKeys[ix], 0.0)
             )
         }
     }
 
 //    @Benchmark
+//    @Threads(4)
     fun benchmarkChronicleFileValues(state: ChronicleState, blackhole: Blackhole) {
         for (ix in ixs) {
             blackhole.consume(
-                    state.values.get(longs[ix], 0.0)
+                    state.values.get(longsKeys[ix], 0.0)
             )
         }
     }
 
-    @Benchmark
+//    @Benchmark
     fun benchmarkLmdbFileValues(state: LmdbState, blackhole: Blackhole) {
         for (ix in ixs) {
             blackhole.consume(
-                    state.values.get(longs[ix], 0.0)
+                    state.values.get(longsKeys[ix], 0.0)
             )
         }
     }
@@ -167,26 +172,27 @@ open class ExternalFileValuesBenchmarks {
     open class RobinHoodState {
         lateinit var table: RobinHoodHashtable
 
-        @Param("LONG", "INT")
-        lateinit var keyType: RobinHoodHashtable.KeyType
-
-        @Param("DOUBLE", "FLOAT", "INT", "SHORT")
-        lateinit var valueType: RobinHoodHashtable.ValueType
+//        @Param("LONG", "INT")
+//        lateinit var keyType: RobinHoodHashtable.KeyType
+//
+//        @Param("DOUBLE", "FLOAT", "INT", "SHORT")
+//        lateinit var valueType: RobinHoodHashtable.ValueType
 
         @Setup(Level.Trial)
         fun setup() {
-            table = RobinHoodHashtable(keyType, valueType, ENTRIES + ENTRIES / 2)
-            longs.withIndex().forEach { (ix, k) ->
-                table.put(k, doubles[ix])
+            table = RobinHoodHashtable(ENTRIES + ENTRIES / 2)
+            intKeys.withIndex().forEach { (ix, k) ->
+                table.put(k, shortValues[ix].toShort())
             }
         }
     }
 
-//    @Benchmark
+    @Benchmark
+    @Threads(4)
     fun benchmarkRobinHoodHashtable(state: RobinHoodState, blackhole: Blackhole) {
         for (ix in ixs) {
             blackhole.consume(
-                    state.table.get(longs[ix], 0.0)
+                    state.table.get(intKeys[ix], 0)
             )
         }
     }
