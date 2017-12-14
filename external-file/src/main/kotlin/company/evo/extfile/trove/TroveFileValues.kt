@@ -182,9 +182,6 @@ class LongIntFileValues(
     }
 
     override fun get(key: Long, defaultValue: Double): Double {
-        if (key > Int.MAX_VALUE) {
-            return defaultValue
-        }
         val v = values.get(key)
         if (v == NO_VALUE) {
             return defaultValue
@@ -246,9 +243,6 @@ class LongShortFileValues(
     }
 
     override fun get(key: Long, defaultValue: Double): Double {
-        if (key > Int.MAX_VALUE) {
-            return defaultValue
-        }
         val v = values.get(key)
         if (v == NO_VALUE) {
             return defaultValue

@@ -14,11 +14,26 @@ const val ENTRIES = 10_000_000
 
 open class ExternalFileValuesBenchmarks {
     companion object {
-        val ixs = Random().ints(0, ENTRIES).limit(1000).toArray()
-        val longsKeys = Random().longs(0, Long.MAX_VALUE).limit(ENTRIES.toLong()).toArray()
-        val intKeys = Random().ints(Int.MIN_VALUE, Int.MAX_VALUE).limit(ENTRIES.toLong()).toArray()
-        val doubleValues = Random().doubles().limit(ENTRIES.toLong()).toArray()
-        val shortValues = Random().ints(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).limit(ENTRIES.toLong()).toArray()
+        val ixs = Random()
+                .ints(0, ENTRIES)
+                .limit(1000)
+                .toArray()
+        val longsKeys = Random()
+                .longs(0, Int.MAX_VALUE.toLong())
+                .limit(ENTRIES.toLong())
+                .toArray()
+        val intKeys = Random()
+                .ints(Int.MIN_VALUE, Int.MAX_VALUE)
+                .limit(ENTRIES.toLong())
+                .toArray()
+        val doubleValues = Random()
+                .doubles()
+                .limit(ENTRIES.toLong())
+                .toArray()
+        val shortValues = Random()
+                .ints(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                .limit(ENTRIES.toLong())
+                .toArray()
     }
 
     open class BaseValuesState {
@@ -122,7 +137,7 @@ open class ExternalFileValuesBenchmarks {
         }
     }
 
-//    @Benchmark
+    @Benchmark
     fun benchmarkTroveFileValues(state: TroveState, blackhole: Blackhole) {
         for (ix in ixs) {
             blackhole.consume(
@@ -188,7 +203,7 @@ open class ExternalFileValuesBenchmarks {
     }
 
     @Benchmark
-    @Threads(4)
+    @Threads(1)
     fun benchmarkRobinHoodHashtable(state: RobinHoodState, blackhole: Blackhole) {
         for (ix in ixs) {
             blackhole.consume(

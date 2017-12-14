@@ -37,7 +37,7 @@ task testFunc(type: Test) {
 testFunc.outputs.upToDateWhen { false }
 
 jmh {
-    warmupIterations = 4
+    warmupIterations = 2
     fork = 1
     iterations = 4
 }

@@ -15,18 +15,22 @@ class RobinHoodHashtable(
         val LOAD_FACTOR = 0.75
         val META_PAGE_SIZE = 4096
         val CATALOG_PAGE_SIZE = 4096
-        val CATALOG_ENTRY_SIZE = 4
+//        val CATALOG_ENTRY_SIZE = 4
+        val CATALOG_ENTRY_SIZE = 2
         val CATALOG_PAGE_ENTRIES = 1000
         val CATALOG_FREE_ENTRIES = 24
-        val DATA_PAGE_SIZE = 4096
+//        val DATA_PAGE_SIZE = 4096
+        val DATA_PAGE_SIZE = 65536
         val DATA_ENTRY_SIZE = 8
-        val DATA_PAGE_ENTRIES = 509 // 8 byte entry
+//        val DATA_PAGE_ENTRIES = 509
+        val DATA_PAGE_ENTRIES = 8191
         val CATALOG_ENTRIES = intArrayOf(
-                1, 3, 7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431, 521, 631, 761, 919,
-                1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839, 7013, 8419, 10103, 12143, 14591,
-                17519, 21023, 25229, 30293, 36353, 43627, 52361, 62851, 75431, 90523, 108631, 130363, 156437,
-                187751, 225307, 270371, 324449, 389357, 467237, 560689, 672827, 807403, 968897, 1162687, 1395263,
-                1674319, 2009191, 2411033, 2893249, 3471899, 4166287, 4999559, 5999471, 7199369
+                1, 3, 7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431,
+                521, 631, 761, 919, 1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839,
+                7013, 8419, 10103, 12143, 14591, 17519, 21023, 25229, 30293, 36353, 43627, 52361,
+                62851, 75431, 90523, 108631, 130363, 156437, 187751, 225307, 270371, 324449, 389357,
+                467237, 560689, 672827, 807403, 968897, 1162687, 1395263, 1674319, 2009191, 2411033,
+                2893249, 3471899, 4166287, 4999559, 5999471, 7199369
         )
     }
 
@@ -49,7 +53,8 @@ class RobinHoodHashtable(
         println("Data pages offset: $dataPagesOffset")
         buffer.position(META_PAGE_SIZE)
         (0 until allDataPages).forEach { dataPageIx ->
-            buffer.putInt(dataPageIx)
+//            buffer.putInt(dataPageIx)
+            buffer.putShort(dataPageIx.toShort())
         }
     }
 
@@ -61,6 +66,19 @@ class RobinHoodHashtable(
         return (key + i) % DATA_PAGE_ENTRIES
     }
 
+    private fun readCatalogEntry(catalogEntryIx: Int): Int {
+        val catalogPage = catalogEntryIx / CATALOG_PAGE_ENTRIES
+        val catalogPageOffset = catalogPage * CATALOG_PAGE_SIZE
+        val catalogEntry = catalogEntryIx % CATALOG_PAGE_ENTRIES
+        val catalogEntryOffset = catalogEntry * CATALOG_ENTRY_SIZE
+//        return buffer.getInt(
+//                META_PAGE_SIZE + catalogPageOffset + catalogEntryOffset
+//        )
+        return buffer.getShort(
+                META_PAGE_SIZE + catalogPageOffset + catalogEntryOffset
+        ).toInt()
+    }
+
     fun put(key: Int, value: Short) {
 //        println(">>> put($key, $value)")
         // TODO Check max entries
@@ -70,17 +88,13 @@ class RobinHoodHashtable(
         var i = 0
         var catalogEntryIx = k % dataPages
         while (true) {
-            val catalogPage = catalogEntryIx / CATALOG_PAGE_ENTRIES
-            val catalogPageOffset = catalogPage * CATALOG_PAGE_SIZE
-            val catalogEntry = catalogEntryIx % CATALOG_PAGE_ENTRIES
-            val catalogEntryOffset = catalogEntry * CATALOG_ENTRY_SIZE
-            val catalogEntryData = buffer.getInt(
-                    META_PAGE_SIZE + catalogPageOffset + catalogEntryOffset
-            )
+            val catalogEntry = readCatalogEntry(catalogEntryIx)
 //            println("  catalog entry: ${java.lang.Integer.toHexString(catalogEntryData)}")
-            val isDataPageFull = (catalogEntryData ushr 31) > 0
+//            val isDataPageFull = (catalogEntry ushr 31) > 0
+            val isDataPageFull = (catalogEntry ushr 15) > 0
             if (!isDataPageFull) {
-                dataPage = catalogEntryData and 0x7FFF_FFFF
+//                dataPage = catalogEntry and 0x7FFF_FFFF
+                dataPage = catalogEntry and 0x7FFF
                 break
             }
             i += 1
@@ -120,18 +134,13 @@ class RobinHoodHashtable(
         val k = abs(key)
 
 
-        val dataPage: Int
+        var dataPage: Int
         var i = 0
         val catalogEntryIx = k % dataPages
         while (true) {
-            val catalogPage = catalogEntryIx / CATALOG_PAGE_ENTRIES
-            val catalogPageOffset = catalogPage * CATALOG_PAGE_SIZE
-            val catalogEntry = catalogEntryIx % CATALOG_PAGE_ENTRIES
-            val catalogEntryOffset = catalogEntry * CATALOG_ENTRY_SIZE
-            val catalogEntryData = buffer.getInt(
-                    META_PAGE_SIZE + catalogPageOffset + catalogEntryOffset
-            )
-            dataPage = catalogEntryData and 0x00FF_FFFF
+            val catalogEntry = readCatalogEntry(catalogEntryIx)
+//            dataPage = catalogEntry and 0x00FF_FFFF
+            dataPage = catalogEntry and 0x7FFF
             val dataPageOffset = dataPagesOffset + dataPage * DATA_PAGE_SIZE
 //            println("catalogEntryIx: $catalogEntryIx")
 //            println("dataPage: $dataPage")
@@ -145,7 +154,7 @@ class RobinHoodHashtable(
 //                println("read entry: 0x${java.lang.Long.toHexString(entry)}")
                 val isOccupied = (entry and 0xFFFF_0000) != 0L
                 if (!isOccupied) {
-                    return defaultValue
+                    break
                 }
                 val entryKey = (entry ushr 32).toInt()
                 if (key == entryKey) {
@@ -153,6 +162,12 @@ class RobinHoodHashtable(
                 }
                 j += 1
                 entryIx = nextEntryIx(k, j)
+            }
+
+//            val isDataPageFull = (catalogEntry ushr 31) > 0
+            val isDataPageFull = (catalogEntry ushr 15) > 0
+            if (!isDataPageFull) {
+                return defaultValue
             }
         }
     }
