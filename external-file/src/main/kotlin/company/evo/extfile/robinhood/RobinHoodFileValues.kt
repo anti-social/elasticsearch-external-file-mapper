@@ -2,6 +2,7 @@ package company.evo.extfile.robinhood
 
 import java.lang.Math.abs
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 //import kotlin.math.abs
 
@@ -15,15 +16,12 @@ class RobinHoodHashtable(
         val LOAD_FACTOR = 0.75
         val META_PAGE_SIZE = 4096
         val CATALOG_PAGE_SIZE = 4096
-//        val CATALOG_ENTRY_SIZE = 4
-        val CATALOG_ENTRY_SIZE = 2
+        val CATALOG_ENTRY_SIZE = 4
         val CATALOG_PAGE_ENTRIES = 1000
-        val CATALOG_FREE_ENTRIES = 24
-//        val DATA_PAGE_SIZE = 4096
-        val DATA_PAGE_SIZE = 65536
+        val CATALOG_PAGE_FREE_ENTRIES = 24
+        val DATA_PAGE_SIZE = 4096
         val DATA_ENTRY_SIZE = 8
-//        val DATA_PAGE_ENTRIES = 509
-        val DATA_PAGE_ENTRIES = 8191
+        val DATA_PAGE_ENTRIES = 509
         val CATALOG_ENTRIES = intArrayOf(
                 1, 3, 7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431,
                 521, 631, 761, 919, 1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839,
@@ -38,12 +36,15 @@ class RobinHoodHashtable(
     private val dataPages = (capacity + DATA_PAGE_ENTRIES - 1) / DATA_PAGE_ENTRIES
     private val minCatalogPages = (dataPages + CATALOG_PAGE_ENTRIES - 1) / CATALOG_PAGE_ENTRIES
     private val catalogPages = CATALOG_ENTRIES.first { it >= minCatalogPages }
-    private val freeDataPages = catalogPages * CATALOG_FREE_ENTRIES
+    private val freeDataPages = catalogPages * CATALOG_PAGE_FREE_ENTRIES
     private val allDataPages = dataPages + freeDataPages
     private val dataPagesOffset = META_PAGE_SIZE + catalogPages * CATALOG_PAGE_SIZE
     private val buffer = ByteBuffer.allocateDirect(
             dataPagesOffset + allDataPages * DATA_PAGE_SIZE
     )
+            .order(ByteOrder.nativeOrder())
+
+    private val catalogFreePages = emptyMap<Int, Set<Int>>()
 
     init {
         println("Buffer capacity: ${buffer.capacity()}")
@@ -53,8 +54,7 @@ class RobinHoodHashtable(
         println("Data pages offset: $dataPagesOffset")
         buffer.position(META_PAGE_SIZE)
         (0 until allDataPages).forEach { dataPageIx ->
-//            buffer.putInt(dataPageIx)
-            buffer.putShort(dataPageIx.toShort())
+            buffer.putInt(dataPageIx)
         }
     }
 
@@ -71,56 +71,115 @@ class RobinHoodHashtable(
         val catalogPageOffset = catalogPage * CATALOG_PAGE_SIZE
         val catalogEntry = catalogEntryIx % CATALOG_PAGE_ENTRIES
         val catalogEntryOffset = catalogEntry * CATALOG_ENTRY_SIZE
-//        return buffer.getInt(
-//                META_PAGE_SIZE + catalogPageOffset + catalogEntryOffset
-//        )
-        return buffer.getShort(
+        return buffer.getInt(
                 META_PAGE_SIZE + catalogPageOffset + catalogEntryOffset
-        ).toInt()
+        )
     }
 
-    fun put(key: Int, value: Short) {
-//        println(">>> put($key, $value)")
-        // TODO Check max entries
-        val k = abs(key)
+    private fun isDataPageFull(catalogEntry: Int): Boolean {
+        return (catalogEntry ushr 31) > 0
+    }
 
-        val dataPage: Int
+    private fun getDataPageIx(catalogEntry: Int): Int {
+        return catalogEntry and 0x00FF_FFFF
+    }
+
+    private fun getDataPageOffset(dataPageIx: Int): Int {
+        return dataPagesOffset + dataPageIx * DATA_PAGE_SIZE
+    }
+
+    private fun readEntry(offset: Int): Long {
+        return buffer.getLong(offset)
+    }
+
+    private fun writeEntry(offset: Int, entry: Long) {
+        buffer.putLong(offset, entry)
+    }
+
+    private fun isEntryOccupied(entry: Long): Boolean {
+        return (entry and 0xFFFF_0000) != 0L
+    }
+
+    private fun getEntryKey(entry: Long): Int {
+        return (entry ushr 32).toInt()
+    }
+
+    private fun getEntryValue(entry: Long): Short {
+        return (entry and 0xFFFF).toShort()
+    }
+
+    private fun findCatalogEntry(k: Int): Long {
         var i = 0
         var catalogEntryIx = k % dataPages
         while (true) {
             val catalogEntry = readCatalogEntry(catalogEntryIx)
 //            println("  catalog entry: ${java.lang.Integer.toHexString(catalogEntryData)}")
-//            val isDataPageFull = (catalogEntry ushr 31) > 0
-            val isDataPageFull = (catalogEntry ushr 15) > 0
-            if (!isDataPageFull) {
-//                dataPage = catalogEntry and 0x7FFF_FFFF
-                dataPage = catalogEntry and 0x7FFF
-                break
+            if (!isDataPageFull(catalogEntry)) {
+                return (catalogEntryIx.toLong() shl 32) or catalogEntry.toLong()
             }
             i += 1
+            if (i >= dataPages) {
+                throw IllegalStateException("Database is overflowed")
+            }
             catalogEntryIx = nextCatalogEntryIx(k, i)
         }
 //        println("  catalogEntryIx: $catalogEntryIx")
 //        println("  dataPage: $dataPage")
+    }
 
-        val dataPageOffset = dataPagesOffset + dataPage * DATA_PAGE_SIZE
+    private fun copyDataPage(srcDataPageIx: Int, dstDataPageIx: Int) {
+        buffer.position(getDataPageOffset(srcDataPageIx))
+        val src = buffer.slice()
+        src.limit(DATA_PAGE_SIZE)
+        buffer.position(getDataPageOffset(dstDataPageIx))
+        val dst = buffer.slice()
+        dst.limit(DATA_PAGE_SIZE)
+        dst.put(src)
+    }
+
+    private fun getFreeDataPage(catalogPage: Int): Int {
+//        val freePages = catalogFreePages[catalogEntryIx]!!
+//        val freeCatalogEntryIx = freePages.single()
+        return -1
+    }
+
+    fun put(key: Int, value: Short) {
+        val k = abs(key)
+
+        val catalogEntry = findCatalogEntry(k)
+        val catalogEntryIx = (catalogEntry ushr 32).toInt()
+
+        val catalogPage = catalogEntryIx / CATALOG_PAGE_ENTRIES
+        val freeDataPageIx = getFreeDataPage(catalogPage)
+    }
+
+    fun putNoCopy(key: Int, value: Short) {
+//        println(">>> put($key, $value)")
+        // TODO Check max entries
+        val k = abs(key)
+
+        val catalogEntry = findCatalogEntry(k)
+        val dataPage = getDataPageIx((catalogEntry and 0xFFFF_FFFF).toInt())
+        val dataPageOffset = getDataPageOffset(dataPage)
 
         var entryIx = k % DATA_PAGE_ENTRIES
         var j = 0
         while (true) {
             val entryOffset = dataPageOffset + entryIx * DATA_ENTRY_SIZE
 //            println("  reading entry at offset: $entryOffset")
-            val entry = buffer.getLong(entryOffset)
-            val isOccupied = (entry and 0xFFFF_0000) != 0L
-            if (!isOccupied) {
-                val newEntry = (key.toLong() shl 32) or 0x8000_0000 or (value.toLong() and 0xFFFF)
+            val entry = readEntry(entryOffset)
+            if (!isEntryOccupied(entry)) {
+                val newEntry = (key.toLong() shl 32) or 0x8000_0000 or
+                        (value.toLong() and 0xFFFF)
 //                println("  writing entry: 0x${java.lang.Long.toHexString(newEntry)} at offset: $entryOffset")
-                buffer.putLong(entryOffset, newEntry)
+                writeEntry(entryOffset, newEntry)
                 break
             }
             val entryKey = (entry ushr 32).toInt()
-            if (!isOccupied || key == entryKey) {
-                buffer.putShort(entryOffset + 6, value)
+            if (key == entryKey) {
+                val newEntry = (entry and (0x0000_FFFF_FFFF_FFFF shl 16)) or
+                        (value.toLong() and 0xFFFF)
+                writeEntry(entryOffset, newEntry)
                 break
             }
             j += 1
@@ -129,45 +188,67 @@ class RobinHoodHashtable(
 //        println("  entryIx: $entryIx")
     }
 
+    fun removeNoCopy(key: Int) {
+        find(key) { dataPageIx, entryIx, entry ->
+            if (entry != 0L) {
+                val dataPageOffset = dataPagesOffset + dataPageIx * DATA_PAGE_SIZE
+                val entryOffset = dataPageOffset + entryIx * DATA_ENTRY_SIZE
+                writeEntry(entryOffset, 0L)
+                val k = abs(key)
+                var i = 1
+                while (true) {
+                    nextEntryIx(k, i)
+                    val entryOffset = dataPageOffset + entryIx * DATA_ENTRY_SIZE
+                    val entry = readEntry(entryOffset)
+                    i += 1
+                }
+            }
+        }
+    }
+
     fun get(key: Int, defaultValue: Short): Short {
-//        println(">>> get($key, $defaultValue)")
+        find(key) { _, _, entry ->
+            if (entry != 0L) {
+                return getEntryValue(entry)
+            }
+        }
+        return defaultValue
+    }
+
+    private inline fun find(key: Int, body: (Int, Int, Long) -> Unit) {
         val k = abs(key)
-
-
+//        println(">>> get($key, $defaultValue)")
         var dataPage: Int
         var i = 0
         val catalogEntryIx = k % dataPages
+        var entryIx: Int
         while (true) {
             val catalogEntry = readCatalogEntry(catalogEntryIx)
-//            dataPage = catalogEntry and 0x00FF_FFFF
-            dataPage = catalogEntry and 0x7FFF
+            dataPage = getDataPageIx(catalogEntry)
             val dataPageOffset = dataPagesOffset + dataPage * DATA_PAGE_SIZE
 //            println("catalogEntryIx: $catalogEntryIx")
 //            println("dataPage: $dataPage")
 
-            var entryIx = k % DATA_PAGE_ENTRIES
+            entryIx = k % DATA_PAGE_ENTRIES
             var j = 0
             while (true) {
 //                println("testing entryIx: $entryIx")
                 val entryOffset = dataPageOffset + entryIx * DATA_ENTRY_SIZE
-                val entry = buffer.getLong(entryOffset)
+                val entry = readEntry(entryOffset)
 //                println("read entry: 0x${java.lang.Long.toHexString(entry)}")
-                val isOccupied = (entry and 0xFFFF_0000) != 0L
-                if (!isOccupied) {
+                if (!isEntryOccupied(entry)) {
                     break
                 }
-                val entryKey = (entry ushr 32).toInt()
+                val entryKey = getEntryKey(entry)
                 if (key == entryKey) {
-                    return (entry and 0xFFFF).toShort()
+                    return body(dataPage, entryIx, entry)
                 }
                 j += 1
                 entryIx = nextEntryIx(k, j)
             }
 
-//            val isDataPageFull = (catalogEntry ushr 31) > 0
-            val isDataPageFull = (catalogEntry ushr 15) > 0
-            if (!isDataPageFull) {
-                return defaultValue
+            if (!isDataPageFull(catalogEntry)) {
+                return body(dataPage, entryIx, 0L)
             }
         }
     }

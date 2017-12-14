@@ -197,7 +197,7 @@ open class ExternalFileValuesBenchmarks {
         fun setup() {
             table = RobinHoodHashtable(ENTRIES + ENTRIES / 2)
             intKeys.withIndex().forEach { (ix, k) ->
-                table.put(k, shortValues[ix].toShort())
+                table.putNoCopy(k, shortValues[ix].toShort())
             }
         }
     }

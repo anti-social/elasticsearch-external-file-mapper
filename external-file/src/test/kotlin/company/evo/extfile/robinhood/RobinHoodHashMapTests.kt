@@ -21,7 +21,7 @@ class RobinHoodHashMapTests : StringSpec() {
             forAll(Gen.int(), short(), { key: Int, value: Short ->
                 val v = value.toShort()
                 val map = RobinHoodHashtable(100)
-                map.put(key, v)
+                map.putNoCopy(key, v)
                 map.get(key, 0) == v
             })
         }
@@ -29,11 +29,11 @@ class RobinHoodHashMapTests : StringSpec() {
 
         "test" {
             val map = RobinHoodHashtable(1_500_000)
-            map.put(1462148595, -3990)
+            map.putNoCopy(1462148595, -3990)
         }
                 .config(enabled = false)
 
-        "write one million random entries, then read them" {
+        "write bunch random entries, then read them" {
             val map = RobinHoodHashtable(1_500_000)
             val limit = 1_000_000L
             val keys = RANDOM
@@ -47,7 +47,7 @@ class RobinHoodHashMapTests : StringSpec() {
             val entries = hashMapOf<Int, Short>()
             keys.withIndex().forEach { (i, k) ->
                 val v = values[i].toShort()
-                map.put(k, v)
+                map.putNoCopy(k, v)
                 entries.put(k, v)
             }
 

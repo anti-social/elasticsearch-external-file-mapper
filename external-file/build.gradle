@@ -26,6 +26,8 @@ dependencies {
     // Lmdb
     compile 'org.lmdbjava:lmdbjava:0.6.0'
 
+    compile 'org.openjdk.jmh:jmh-core:1.19'
+
     testCompile "org.jetbrains.kotlin:kotlin-reflect"
     testCompile 'io.kotlintest:kotlintest:2.0.7'
 }
