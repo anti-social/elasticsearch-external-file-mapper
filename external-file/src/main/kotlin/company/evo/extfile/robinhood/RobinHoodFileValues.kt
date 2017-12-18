@@ -1,23 +1,163 @@
 package company.evo.extfile.robinhood
 
+import java.io.RandomAccessFile
 import java.lang.Math.abs
+import java.lang.Math.max
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.channels.FileChannel
+import java.nio.file.Path
 
 //import kotlin.math.abs
 
 
-class RobinHoodHashtable(
-//        val keyType: KeyType,
-//        val valueType: ValueType,
-        val maxEntries: Int
-) {
+class InvalidHashtable(msg: String) : Exception(msg)
+
+class ReadonlyHashtable : Exception()
+
+class RobinHoodHashtable private constructor(builder: Builder) {
+    enum class KeyType(size: Int) {
+        INT(4), LONG(8)
+    }
+    enum class ValueType(size: Int) {
+        FLOAT(4), DOUBLE(8), INT(4), SHORT(2)
+    }
+
+    /*
+    Header:
+    - 4b: magic (must be "RHHT")
+    - 4b: capacity
+    - 4b: maximum number of entries
+    - 4b: number of data pages
+    - 4b: number of hash table entries
+     */
+    private class Header(
+            val maxEntries: Int,
+            val capacity: Int,
+            val numDataPages: Int,
+            val size: Int
+    ) {
+        companion object {
+            val HEADER_SIZE = 20
+            val MAGIC = "RHHT".toByteArray()
+            val SIZE_OFFSET = 16
+
+            fun read(buffer: ByteBuffer): Header {
+                val magic = ByteArray(4)
+                buffer.get(magic)
+                if (!magic.contentEquals(MAGIC)) {
+                    throw InvalidHashtable(
+                            "Expected ${MAGIC.contentToString()} magic number " +
+                                    "but was: ${magic.contentToString()}"
+                    )
+                }
+                val maxEntries = buffer.getInt()
+                val capacity = buffer.getInt()
+                val numDataPages = buffer.getInt()
+                val size = buffer.getInt()
+                return Header(capacity, maxEntries, numDataPages, size)
+            }
+        }
+
+        fun write(buffer: ByteBuffer) {
+            buffer.put(MAGIC)
+            buffer.putInt(maxEntries)
+            buffer.putInt(capacity)
+            buffer.putInt(numDataPages)
+            buffer.putInt(size)
+        }
+
+        fun toByteArray(): ByteArray {
+            val buffer = ByteBuffer.allocate(HEADER_SIZE)
+                    .order(ByteOrder.nativeOrder())
+            write(buffer)
+            return buffer.array()
+        }
+    }
+
+    class Builder(
+            val keyType: KeyType,
+            val valueType: ValueType,
+            // TODO Make optional for anonymous hashtables
+            var maxEntries: Int
+    ) {
+        internal val bucketLayout = BucketLayout.createForTypes(keyType, valueType)
+        internal val bucketsPerPage = PAGE_SIZE / bucketLayout.size
+        internal var capacity: Int = 0
+        internal var numDataPages: Int = 0
+        internal var buffer: ByteBuffer? = null
+
+        var writeMode: Boolean = false
+            private set
+        fun writeMode(writeMode: Boolean) = apply { this.writeMode = writeMode }
+
+        internal fun calcCapacity(maxEntries: Int): Int {
+            val minCapacity = (maxEntries / LOAD_FACTOR).toInt()
+            return PRIMES.first { it >= minCapacity }
+        }
+
+        internal fun calcDataPages(capacity: Int): Int {
+            return (capacity + bucketsPerPage - 1) / bucketsPerPage
+        }
+
+        internal fun calcBufferSize(numDataPages: Int): Int {
+            return (1 + numDataPages) * PAGE_SIZE
+        }
+
+        fun create(): RobinHoodHashtable {
+            writeMode = true
+            capacity = calcCapacity(maxEntries)
+            numDataPages = calcDataPages(capacity)
+            return RobinHoodHashtable(this)
+        }
+
+        fun create(path: Path): RobinHoodHashtable {
+            RandomAccessFile(path.toString(), "rw").use { file ->
+                capacity = calcCapacity(maxEntries)
+                numDataPages = calcDataPages(capacity)
+                file.setLength(calcBufferSize(numDataPages).toLong())
+                val zerosPage = ByteArray(PAGE_SIZE)
+                (0 until numDataPages+1).forEach {
+                    file.write(zerosPage)
+                }
+                file.seek(0)
+                val header = Header(capacity, maxEntries, numDataPages, 0)
+                file.write(header.toByteArray())
+            }
+            return open(path)
+        }
+
+        fun open(path: Path): RobinHoodHashtable {
+            val mode = if (writeMode) "rw" else "r"
+            val mapMode = if (writeMode) {
+                FileChannel.MapMode.READ_WRITE
+            } else {
+                FileChannel.MapMode.READ_ONLY
+            }
+            val file = RandomAccessFile(path.toString(), mode)
+            val channel = file.channel
+            val fileSize = channel.size()
+            val buffer = channel.map(mapMode, 0, fileSize)
+                    .order(ByteOrder.nativeOrder())
+            val header = Header.read(buffer)
+            capacity = header.capacity
+            maxEntries = header.maxEntries
+            numDataPages = header.numDataPages
+            val expectedFileSize = calcBufferSize(numDataPages)
+            if (fileSize != expectedFileSize.toLong()) {
+                throw InvalidHashtable(
+                        "File size must be $expectedFileSize but was: $fileSize"
+                )
+            }
+            this.buffer = buffer
+            return RobinHoodHashtable(this)
+        }
+    }
+
     companion object {
-        val LOAD_FACTOR = 0.75
-        val PAGE_SIZE = 4096
-        val BUCKET_SIZE = 8
-        val BUCKETS_PER_PAGE = PAGE_SIZE / BUCKET_SIZE
-        val PRIMES = intArrayOf(
+        private val LOAD_FACTOR = 0.75
+        private val PAGE_SIZE = 4096
+        private val PRIMES = intArrayOf(
                 // http://referencesource.microsoft.com/#mscorlib/system/collections/hashtable.cs,1663
                 1, 3, 7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431,
                 521, 631, 761, 919, 1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839,
@@ -34,21 +174,79 @@ class RobinHoodHashtable(
         )
     }
 
-    data class BucketLayout(val meta: Int, val key: Int, val value: Int)
-
-    private val minCapacity = (maxEntries / LOAD_FACTOR).toInt()
-    private val capacity = PRIMES.first { it >= minCapacity }
-    private val dataPages = (capacity + BUCKETS_PER_PAGE - 1) / BUCKETS_PER_PAGE
-    private val bucketLayout = BucketLayout(4, 0, 6)
-    private val buffer = ByteBuffer.allocateDirect(
-            (1 + dataPages) * PAGE_SIZE
-    )
-            .order(ByteOrder.nativeOrder())
-
-    init {
+    internal data class BucketLayout(
+            val meta: Int, val key: Int, val value: Int, val size: Int
+    ) {
+        companion object {
+            fun createForTypes(keyType: KeyType, valueType: ValueType): BucketLayout {
+                return when(keyType to valueType) {
+                    KeyType.INT to ValueType.INT,
+                    KeyType.INT to ValueType.FLOAT -> {
+                        BucketLayout(0, 4, 8, 12)
+                    }
+                    KeyType.INT to ValueType.DOUBLE -> {
+                        BucketLayout(0, 4, 8, 16)
+                    }
+                    KeyType.INT to ValueType.SHORT -> {
+                        BucketLayout(4, 0, 6, 8)
+                    }
+                    KeyType.LONG to ValueType.INT,
+                    KeyType.LONG to ValueType.FLOAT,
+                    KeyType.LONG to ValueType.SHORT -> {
+                        BucketLayout(12, 0, 8, 16)
+                    }
+                    KeyType.LONG to ValueType.DOUBLE -> {
+                        BucketLayout(16, 0, 8, 24)
+                    }
+                    else -> {
+                        throw IllegalArgumentException()
+                    }
+                }
+            }
+        }
     }
 
-    private fun nextEntryIx(h: Int, i: Int): Int {
+    private val maxEntries: Int
+    private val capacity: Int
+    private val numDataPages: Int
+    private val buffer: ByteBuffer
+    private val allowWriteOperations: Boolean
+    private val bucketLayout: BucketLayout
+    private val bucketsPerPage: Int
+
+    constructor(maxEntries: Int) :
+            this(Builder(KeyType.LONG, ValueType.DOUBLE, maxEntries))
+
+    init {
+        val buffer = builder.buffer
+        if (buffer != null) {
+            allowWriteOperations = builder.writeMode
+            maxEntries = builder.maxEntries
+            capacity = builder.capacity
+            numDataPages = builder.numDataPages
+            this.buffer = buffer
+        } else {
+            allowWriteOperations = true
+            maxEntries = builder.maxEntries
+            capacity = builder.calcCapacity(builder.maxEntries)
+            numDataPages = builder.calcDataPages(capacity)
+            this.buffer = ByteBuffer.allocateDirect(builder.calcBufferSize(numDataPages))
+                    .order(ByteOrder.nativeOrder())
+            val header = Header(capacity, maxEntries, numDataPages, 0)
+            this.buffer.put(header.toByteArray())
+        }
+        bucketLayout = builder.bucketLayout
+        bucketsPerPage = builder.bucketsPerPage
+    }
+
+    val size: Int
+        get() = buffer.getInt(Header.SIZE_OFFSET)
+
+    private fun writeSize(size: Int) {
+        buffer.putInt(Header.SIZE_OFFSET, size)
+    }
+
+    private fun getBucketIx(h: Int, i: Int): Int {
         return (h + i) % capacity
     }
 
@@ -131,7 +329,7 @@ class RobinHoodHashtable(
     }
 
     private fun getDataPageIx(bucketIx: Int): Int {
-        return bucketIx / BUCKETS_PER_PAGE
+        return bucketIx / bucketsPerPage
     }
 
     private fun getDataPageOffset(pageIx: Int): Int {
@@ -139,10 +337,13 @@ class RobinHoodHashtable(
     }
 
     private fun getBucketOffset(pageOffset: Int, bucketIx: Int): Int {
-        return pageOffset + (bucketIx % BUCKETS_PER_PAGE) * BUCKET_SIZE
+        return pageOffset + (bucketIx % bucketsPerPage) * bucketLayout.size
     }
 
     fun put(key: Int, value: Short): Boolean {
+        if (!allowWriteOperations) {
+            throw ReadonlyHashtable()
+        }
 //        println(">>> put($key, $value)")
 
         // TODO Check max entries
@@ -170,13 +371,17 @@ class RobinHoodHashtable(
     }
 
     fun remove(key: Int) {
+        if (!allowWriteOperations) {
+            throw ReadonlyHashtable()
+        }
+
 //        println(">>> map.remove($key)")
         val h = abs(key)
         find(h,
                 { bucketOffset, i ->
 //                    println("  --- maybeFound ---")
                     if (key == readBucketKey(bucketOffset)) {
-                        removeBucket(h, i, this::copyBucket)
+                        removeBucket(h, i)
                         true
                     } else {
                         false
@@ -189,7 +394,7 @@ class RobinHoodHashtable(
     fun get(key: Int, defaultValue: Short): Short {
         val h = abs(key)
         find(h,
-                { bucketOffset, i ->
+                { bucketOffset, _ ->
                     if (key == readBucketKey(bucketOffset)) {
                         return readBucketValue(bucketOffset)
                     }
@@ -202,6 +407,22 @@ class RobinHoodHashtable(
         return defaultValue
     }
 
+    fun contains(key: Int): Boolean {
+        val h = abs(key)
+        find(h,
+                { bucketOffset, _ ->
+                    if (key == readBucketKey(bucketOffset)) {
+                        return true
+                    }
+                    false
+                },
+                { _, _ ->
+                    return false
+                }
+        )
+        return false
+    }
+
     private inline fun find(
             h: Int,
             maybeFound: (Int, Int) -> Boolean,
@@ -209,7 +430,7 @@ class RobinHoodHashtable(
     ) {
 //        println(">>> find($h)")
         var i = 0
-        var bucketIx = nextEntryIx(h, i)
+        var bucketIx = getBucketIx(h, i)
         while (true) {
             val dataPage = getDataPageIx(bucketIx)
             val dataPageOffset = getDataPageOffset(dataPage)
@@ -230,110 +451,43 @@ class RobinHoodHashtable(
                 break
             }
             i += 1
-            bucketIx = nextEntryIx(h, i)
+            bucketIx = getBucketIx(h, i)
         }
     }
 
-    private inline fun removeBucket(h: Int, dist: Int, copyBucket: (Int, Int) -> Unit) {
-        val bucketIx = nextEntryIx(h, dist)
-        val bucketOffset = calculateBucketOffset(bucketIx)
-        println("  remove bucket ix: $bucketIx")
+    private fun removeBucket(h: Int, dist: Int) {
+//        val bucketIx = getBucketIx(h, dist)
 
-//        // Find first free bucket or bucket with zero distance
-//        var stopBucketIx = bucketIx
-//        var stopBucketOffset: Int
-//        while (true) {
-//            stopBucketOffset = calculateBucketOffset(stopBucketIx)
-//            val meta = readBucketMeta(stopBucketOffset)
-//            if (!isBucketOccupied(meta)) {
-//                break
-//            }
-//            val stopBucketDist = getDistance(meta)
-//            if (stopBucketDist == 0) {
-//                break
-//            }
-//            stopBucketIx = nextBucketIx(stopBucketIx)
-//            if (stopBucketIx == bucketIx) {
-//                break
-//            }
-//        }
-//        println("  stop bucket ix: $stopBucketIx")
-//
-//        // Shift all buckets between curent bucket and free bucket
-//        var dstBucketIx = bucketIx
-//        var dstBucketOffset = bucketOffset
-//        var srcBucketIx: Int
-//        var srcBucketOffset: Int
-//        while (true) {
-//            srcBucketIx = nextBucketIx(dstBucketIx)
-//            srcBucketOffset = calculateBucketOffset(srcBucketIx)
-//
-//            if (srcBucketIx == stopBucketIx) {
-//                break
-//            }
-//
-//            val srcMeta = readBucketMeta(srcBucketOffset)
-//            val srcDistance = getDistance(srcMeta)
-////            println("  copying $srcBucketIx -> $dstBucketIx with dist: ${srcDistance - 1}")
-//            putTombstone(dstBucketOffset)
-//            copyBucket(srcBucketOffset, dstBucketOffset)
-//            writeBucketDistance(dstBucketOffset, srcDistance - 1)
-//
-//            dstBucketIx = srcBucketIx
-//            dstBucketOffset = srcBucketOffset
-//        }
-//
-//        clearBucket(dstBucketOffset)
-
-//        val prevBucketIx = nextEntryIx(h, prevI)
-//        var prevBucketOffset = calculateBucketOffset(prevBucketIx)
-        var i = dist + 1
-//        var bucketIx = nextEntryIx(h, i)
-        var dstBucketIx = bucketIx
+        var dstBucketIx = getBucketIx(h, dist)
+//        println("  remove bucket ix: $dstBucketIx")
         var dstBucketOffset = calculateBucketOffset(dstBucketIx)
-        var dstDist = dist
 //        println("  removeBucket($h), prevBucketIx: $prevBucketIx, bucketIx: $bucketIx")
         while (true) {
-            var srcBucketIx = nextBucketIx(bucketIx)
+            val srcBucketIx = nextBucketIx(dstBucketIx)
             val srcBucketOffset = calculateBucketOffset(srcBucketIx)
-            val meta = readBucketMeta(srcBucketOffset)
-            val curDistance = getDistance(meta)
-            println("  bucketIx: $bucketIx, meta: $meta, cur dist: $curDistance, distDiff: ${dist - dstDist}, ${isBucketOccupied(meta)}")
-            if (isBucketOccupied(meta)) {
-                val distanceToPrev = i - dstDist
-                if (curDistance >= distanceToPrev) {
-                    println("  putting tombstone into: $dstBucketIx")
-                    putTombstone(dstBucketOffset)
-                    println("  copying bucket: $srcBucketIx -> $dstBucketIx")
-                    copyBucket(srcBucketOffset, dstBucketOffset)
-                    println("  setting distance for $dstBucketIx: ${curDistance - distanceToPrev}")
-                    writeBucketDistance(dstBucketOffset, curDistance - distanceToPrev)
-                } else {
-                    i += 1
-                    srcBucketIx = nextBucketIx(srcBucketIx)
-                    continue
-                }
+            val srcMeta = readBucketMeta(srcBucketOffset)
+            val srcDistance = getDistance(srcMeta)
+//            println("  src: $srcBucketIx($srcDistance), dst: $dstBucketIx")
+            if (isBucketOccupied(srcMeta) && srcDistance != 0) {
+//                println("  copying $srcBucketIx -> $dstBucketIx(${srcDistance - 1})")
+                putTombstone(dstBucketOffset)
+                copyBucket(srcBucketOffset, dstBucketOffset)
+                writeBucketDistance(dstBucketOffset, srcDistance - 1)
             } else {
                 clearBucket(dstBucketOffset)
                 break
             }
             dstBucketIx = srcBucketIx
             dstBucketOffset = srcBucketOffset
-            dstDist = i
-            i += 1
         }
-    }
 
-    private data class MoveAction(
-            val srcBucketOffset: Int,
-            val dstBucketOffset: Int,
-            val newDistance: Int
-    )
+        writeSize(size - 1)
+    }
 
     private inline fun putBucket(h: Int, dist: Int, writeBucket: (Int) -> Unit): Boolean {
 //        println(">>> putBucket($h, $dist)")
 
-        val bucketIx = nextEntryIx(h, dist)
+        val bucketIx = getBucketIx(h, dist)
         val bucketOffset = calculateBucketOffset(bucketIx)
 
         // Find first free bucket
@@ -381,46 +535,9 @@ class RobinHoodHashtable(
         writeBucket(bucketOffset)
         writeBucketDistance(bucketOffset, dist)
 
-        return true
+        writeSize(size + 1)
 
-//        val actions = arrayListOf<MoveAction>()
-//        var srcBucketIx = bucketIx
-//        var srcBucketOffset = bucketOffset
-//        while (true) {
-//            val meta = readBucketMeta(srcBucketOffset)
-//            val srcDistance = getDistance(meta)
-//            var i = 1
-//            var isLast = false
-//            var dstBucketIx: Int
-//            var dstBucketOffset: Int
-//            while (true) {
-//                dstBucketIx = srcBucketIx + i // FIXME
-//                dstBucketOffset = calculateBucketOffset(dstBucketIx)
-//                val dstMeta = readBucketMeta(dstBucketOffset)
-//                if (!isBucketOccupied(dstMeta)) {
-//                    isLast = true
-//                    break
-//                }
-//                val dstDistance = getDistance(dstMeta)
-//                if (dstDistance < srcDistance + i) {
-//                    break
-//                }
-//                dstBucketIx += 1 // FIXME
-//                i += 1
-//            }
-//            actions.add(MoveAction(srcBucketOffset, dstBucketOffset, srcDistance + i))
-//            if (isLast) {
-//                break
-//            }
-//        }
-//
-//        actions.asReversed().forEach {
-//            copyBucket(it.srcBucketOffset, it.dstBucketOffset)
-//            writeBucketDistance(it.dstBucketOffset, -1)
-//            putTombstone(it.srcBucketOffset)
-//        }
-//        writeBucket(bucketOffset)
-//        writeBucketDistance(bucketOffset, dist)
+        return true
     }
 
     private fun calculateBucketOffset(bucketIx: Int): Int {
@@ -442,8 +559,8 @@ class RobinHoodHashtable(
     internal fun print() {
         println("Capacity: $capacity")
         println("Buffer capacity: ${buffer.capacity()}")
-        println("Data pages: $dataPages")
-        println("Buckets per page: $BUCKETS_PER_PAGE")
+        println("Data pages: $numDataPages")
+        println("Buckets per page: $bucketsPerPage")
         (0 until capacity).forEach { bucketIx ->
             val bucketOffset = calculateBucketOffset(bucketIx)
             val meta = readBucketMeta(bucketOffset)
