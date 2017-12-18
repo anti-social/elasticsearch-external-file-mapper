@@ -137,7 +137,7 @@ open class ExternalFileValuesBenchmarks {
         }
     }
 
-    @Benchmark
+//    @Benchmark
     fun benchmarkTroveFileValues(state: TroveState, blackhole: Blackhole) {
         for (ix in ixs) {
             blackhole.consume(
@@ -197,7 +197,7 @@ open class ExternalFileValuesBenchmarks {
         fun setup() {
             table = RobinHoodHashtable(ENTRIES + ENTRIES / 2)
             intKeys.withIndex().forEach { (ix, k) ->
-                table.putNoCopy(k, shortValues[ix].toShort())
+                table.put(k, shortValues[ix].toShort())
             }
         }
     }
