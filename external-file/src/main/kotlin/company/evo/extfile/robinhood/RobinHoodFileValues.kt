@@ -52,6 +52,22 @@ class RobinHoodHashtable(
         return (h + i) % capacity
     }
 
+    private fun nextBucketIx(bucketIx: Int): Int {
+        val nextIx = bucketIx + 1
+        if (nextIx >= capacity) {
+            return 0
+        }
+        return nextIx
+    }
+
+    private fun prevBucketIx(bucketIx: Int): Int {
+        val prevIx = bucketIx - 1
+        if (prevIx < 0) {
+            return capacity - 1
+        }
+        return prevIx
+    }
+
 //    private fun readEntry(offset: Int): Long {
 ////        println("  reading bucket at: $offset")
 //        return buffer.getLong(offset)
@@ -126,14 +142,15 @@ class RobinHoodHashtable(
         return pageOffset + (bucketIx % BUCKETS_PER_PAGE) * BUCKET_SIZE
     }
 
-    fun put(key: Int, value: Short) {
+    fun put(key: Int, value: Short): Boolean {
 //        println(">>> put($key, $value)")
 
         // TODO Check max entries
         val h = abs(key)
 
         find(h,
-                { bucketOffset, i ->
+                maybeFound = { bucketOffset, dist ->
+//                    println("  --- maybeFound ---")
                     if (key == readBucketKey(bucketOffset)) {
                         writeBucketValue(bucketOffset, value)
                         true
@@ -141,11 +158,15 @@ class RobinHoodHashtable(
                         false
                     }
                 },
-                { bucketOffset, i ->
-                    writeBucketData(bucketOffset, key, value)
-                    writeBucketDistance(bucketOffset, i)
+                notFound = { bucketOffset, i ->
+//                    println("  --- notFound ---")
+                    putBucket(h, i) {
+                        writeBucketData(bucketOffset, key, value)
+                        writeBucketDistance(bucketOffset, i)
+                    }
                 }
         )
+        return true
     }
 
     fun remove(key: Int) {
@@ -153,6 +174,7 @@ class RobinHoodHashtable(
         val h = abs(key)
         find(h,
                 { bucketOffset, i ->
+//                    println("  --- maybeFound ---")
                     if (key == readBucketKey(bucketOffset)) {
                         removeBucket(h, i, this::copyBucket)
                         true
@@ -194,11 +216,13 @@ class RobinHoodHashtable(
             val bucketOffset = getBucketOffset(dataPageOffset, bucketIx)
             val meta = readBucketMeta(bucketOffset)
             if (isBucketTombstoned(meta)) {
+                i += 1
                 continue
             }
             val dist = getDistance(meta)
-//            if (!isBucketOccupied(meta) || dist < i) {
-            if (!isBucketOccupied(meta)) {
+//            println("  i: $i, dist: $dist, is occupied: ${isBucketOccupied(meta)}")
+            if (!isBucketOccupied(meta) || dist < i) {
+//            if (!isBucketOccupied(meta)) {
                 notFound(bucketOffset, i)
                 break
             }
@@ -210,41 +234,193 @@ class RobinHoodHashtable(
         }
     }
 
-    private inline fun removeBucket(h: Int, i: Int, copyBucket: (Int, Int) -> Unit) {
-        var prevI = i
-        var prevBucketIx = nextEntryIx(h, prevI)
-        var prevBucketOffset = calculateBucketOffset(prevBucketIx)
-        var i = i + 1
-        var bucketIx = nextEntryIx(h, i)
+    private inline fun removeBucket(h: Int, dist: Int, copyBucket: (Int, Int) -> Unit) {
+        val bucketIx = nextEntryIx(h, dist)
+        val bucketOffset = calculateBucketOffset(bucketIx)
+        println("  remove bucket ix: $bucketIx")
+
+//        // Find first free bucket or bucket with zero distance
+//        var stopBucketIx = bucketIx
+//        var stopBucketOffset: Int
+//        while (true) {
+//            stopBucketOffset = calculateBucketOffset(stopBucketIx)
+//            val meta = readBucketMeta(stopBucketOffset)
+//            if (!isBucketOccupied(meta)) {
+//                break
+//            }
+//            val stopBucketDist = getDistance(meta)
+//            if (stopBucketDist == 0) {
+//                break
+//            }
+//            stopBucketIx = nextBucketIx(stopBucketIx)
+//            if (stopBucketIx == bucketIx) {
+//                break
+//            }
+//        }
+//        println("  stop bucket ix: $stopBucketIx")
+//
+//        // Shift all buckets between curent bucket and free bucket
+//        var dstBucketIx = bucketIx
+//        var dstBucketOffset = bucketOffset
+//        var srcBucketIx: Int
+//        var srcBucketOffset: Int
+//        while (true) {
+//            srcBucketIx = nextBucketIx(dstBucketIx)
+//            srcBucketOffset = calculateBucketOffset(srcBucketIx)
+//
+//            if (srcBucketIx == stopBucketIx) {
+//                break
+//            }
+//
+//            val srcMeta = readBucketMeta(srcBucketOffset)
+//            val srcDistance = getDistance(srcMeta)
+////            println("  copying $srcBucketIx -> $dstBucketIx with dist: ${srcDistance - 1}")
+//            putTombstone(dstBucketOffset)
+//            copyBucket(srcBucketOffset, dstBucketOffset)
+//            writeBucketDistance(dstBucketOffset, srcDistance - 1)
+//
+//            dstBucketIx = srcBucketIx
+//            dstBucketOffset = srcBucketOffset
+//        }
+//
+//        clearBucket(dstBucketOffset)
+
+//        val prevBucketIx = nextEntryIx(h, prevI)
+//        var prevBucketOffset = calculateBucketOffset(prevBucketIx)
+        var i = dist + 1
+//        var bucketIx = nextEntryIx(h, i)
+        var dstBucketIx = bucketIx
+        var dstBucketOffset = calculateBucketOffset(dstBucketIx)
+        var dstDist = dist
 //        println("  removeBucket($h), prevBucketIx: $prevBucketIx, bucketIx: $bucketIx")
         while (true) {
-            val bucketOffset = calculateBucketOffset(bucketIx)
-            val meta = readBucketMeta(bucketOffset)
-            val distance = getDistance(meta)
-//            println("  bucketIx: $bucketIx, meta: $meta, dist: $distance, distDiff: ${i - prevI}, ${isBucketOccupied(meta)}")
+            var srcBucketIx = nextBucketIx(bucketIx)
+            val srcBucketOffset = calculateBucketOffset(srcBucketIx)
+            val meta = readBucketMeta(srcBucketOffset)
+            val curDistance = getDistance(meta)
+            println("  bucketIx: $bucketIx, meta: $meta, cur dist: $curDistance, distDiff: ${dist - dstDist}, ${isBucketOccupied(meta)}")
             if (isBucketOccupied(meta)) {
-                if (distance >= i - prevI) {
-//                    println("  putting tombstone into: $prevBucketIx")
-                    putTombstone(prevBucketOffset)
-//                    println("  copying bucket: $bucketIx -> $prevBucketIx")
-                    copyBucket(bucketOffset, prevBucketOffset)
-//                    println("  setting distance for $prevBucketIx: ${distance - (i - prevI)}")
-                    writeBucketDistance(prevBucketOffset, distance - (i - prevI))
+                val distanceToPrev = i - dstDist
+                if (curDistance >= distanceToPrev) {
+                    println("  putting tombstone into: $dstBucketIx")
+                    putTombstone(dstBucketOffset)
+                    println("  copying bucket: $srcBucketIx -> $dstBucketIx")
+                    copyBucket(srcBucketOffset, dstBucketOffset)
+                    println("  setting distance for $dstBucketIx: ${curDistance - distanceToPrev}")
+                    writeBucketDistance(dstBucketOffset, curDistance - distanceToPrev)
                 } else {
                     i += 1
-                    bucketIx = nextEntryIx(h, i)
+                    srcBucketIx = nextBucketIx(srcBucketIx)
                     continue
                 }
             } else {
-                clearBucket(prevBucketOffset)
+                clearBucket(dstBucketOffset)
                 break
             }
-            prevBucketIx = bucketIx
-            prevBucketOffset = bucketOffset
-            prevI = i
+            dstBucketIx = srcBucketIx
+            dstBucketOffset = srcBucketOffset
+            dstDist = i
             i += 1
-            bucketIx = nextEntryIx(h, i)
         }
+    }
+
+    private data class MoveAction(
+            val srcBucketOffset: Int,
+            val dstBucketOffset: Int,
+            val newDistance: Int
+    )
+
+    private inline fun putBucket(h: Int, dist: Int, writeBucket: (Int) -> Unit): Boolean {
+//        println(">>> putBucket($h, $dist)")
+
+        val bucketIx = nextEntryIx(h, dist)
+        val bucketOffset = calculateBucketOffset(bucketIx)
+
+        // Find first free bucket
+        var freeBucketIx = bucketIx
+        var freeBucketOffset: Int
+        while (true) {
+            freeBucketOffset = calculateBucketOffset(freeBucketIx)
+            val meta = readBucketMeta(freeBucketOffset)
+            if (!isBucketOccupied(meta)) {
+                break
+            }
+            freeBucketIx = nextBucketIx(freeBucketIx)
+            // There are no free buckets, hash table is full
+            if (freeBucketIx == bucketIx) {
+                return false
+            }
+        }
+//        println("  free bucket ix: $freeBucketIx")
+
+        // Shift all buckets between current and free bucket
+        if (bucketIx != freeBucketIx) {
+            var dstBucketIx = freeBucketIx
+            var dstBucketOffset = freeBucketOffset
+            while (true) {
+                val srcBucketIx = prevBucketIx(dstBucketIx)
+                val srcBucketOffset = calculateBucketOffset(srcBucketIx)
+                val srcMeta = readBucketMeta(srcBucketOffset)
+                val srcDistance = getDistance(srcMeta)
+
+//                println("  copying $srcBucketIx -> $dstBucketIx with new distance: ${srcDistance + 1}")
+                copyBucket(srcBucketOffset, dstBucketOffset)
+                writeBucketDistance(dstBucketOffset, srcDistance + 1)
+                putTombstone(srcBucketOffset)
+
+                if (srcBucketIx == bucketIx) {
+                    break
+                }
+
+                dstBucketIx = srcBucketIx
+                dstBucketOffset = srcBucketOffset
+            }
+        }
+
+        // Write data into current bucket
+        writeBucket(bucketOffset)
+        writeBucketDistance(bucketOffset, dist)
+
+        return true
+
+//        val actions = arrayListOf<MoveAction>()
+//        var srcBucketIx = bucketIx
+//        var srcBucketOffset = bucketOffset
+//        while (true) {
+//            val meta = readBucketMeta(srcBucketOffset)
+//            val srcDistance = getDistance(meta)
+//            var i = 1
+//            var isLast = false
+//            var dstBucketIx: Int
+//            var dstBucketOffset: Int
+//            while (true) {
+//                dstBucketIx = srcBucketIx + i // FIXME
+//                dstBucketOffset = calculateBucketOffset(dstBucketIx)
+//                val dstMeta = readBucketMeta(dstBucketOffset)
+//                if (!isBucketOccupied(dstMeta)) {
+//                    isLast = true
+//                    break
+//                }
+//                val dstDistance = getDistance(dstMeta)
+//                if (dstDistance < srcDistance + i) {
+//                    break
+//                }
+//                dstBucketIx += 1 // FIXME
+//                i += 1
+//            }
+//            actions.add(MoveAction(srcBucketOffset, dstBucketOffset, srcDistance + i))
+//            if (isLast) {
+//                break
+//            }
+//        }
+//
+//        actions.asReversed().forEach {
+//            copyBucket(it.srcBucketOffset, it.dstBucketOffset)
+//            writeBucketDistance(it.dstBucketOffset, -1)
+//            putTombstone(it.srcBucketOffset)
+//        }
+//        writeBucket(bucketOffset)
+//        writeBucketDistance(bucketOffset, dist)
     }
 
     private fun calculateBucketOffset(bucketIx: Int): Int {

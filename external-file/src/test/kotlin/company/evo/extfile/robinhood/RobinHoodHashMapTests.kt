@@ -1,10 +1,10 @@
 package company.evo.extfile.robinhood
 
+import java.util.*
+
 import io.kotlintest.matchers.*
 import io.kotlintest.properties.*
 import io.kotlintest.specs.StringSpec
-import java.util.*
-import kotlin.collections.HashMap
 
 
 class RobinHoodHashMapTests : StringSpec() {
@@ -17,26 +17,87 @@ class RobinHoodHashMapTests : StringSpec() {
     }
 
     init {
-        "test single put then get" {
+        "minimum capacity: single put then get" {
             forAll(Gen.int(), short(), { key: Int, value: Short ->
                 val v = value.toShort()
-                val map = RobinHoodHashtable(100)
+                val map = RobinHoodHashtable(1)
+//                map.print()
                 map.put(key, v)
                 map.get(key, 0) == v
             })
         }
                 .config(enabled = false)
 
-        "test single put then remove and get" {
-            forAll(Gen.int(), short(), { key: Int, value: Short ->
-                val v = value.toShort()
-                val map = RobinHoodHashtable(100)
-                map.put(key, v)
-                map.remove(key)
-                map.get(key, 0) == 0.toShort()
+        "minimum capacity: single put then remove and get" {
+            forAll(Gen.int(), short(), { k: Int, v: Short ->
+                val map = RobinHoodHashtable(1)
+                map.put(k, v)
+//                map.print()
+                map.remove(k)
+//                map.print()
+                map.get(k, 0) == 0.toShort()
             })
         }
                 .config(enabled = false)
+
+        "max entries reached" {
+            val map = RobinHoodHashtable(2)
+            map.put(1, 1) shouldBe true
+            map.put(2, 2) shouldBe true
+            map.put(3, 3) shouldBe false
+        }
+                .config(enabled = false)
+
+        "test collisions" {
+            val map = RobinHoodHashtable(4)
+            map.put(1, 1)
+            map.put(8, 8)
+            map.put(15, 15)
+            map.put(2, 2)
+            map.print()
+            map.get(1, 0) shouldBe 1.toShort()
+            map.get(2, 0) shouldBe 2.toShort()
+            map.get(8, 0) shouldBe 8.toShort()
+            map.get(15, 0) shouldBe  15.toShort()
+        }
+                .config(enabled = false)
+
+        "remove with shift" {
+            val map = RobinHoodHashtable(4)
+            map.put(1, 1)
+            map.put(8, 8)
+            map.put(15, 15)
+            map.put(2, 2)
+            map.put(5, 5)
+            map.print()
+            map.remove(8)
+            map.print()
+            map.get(1, 0) shouldBe 1.toShort()
+            map.get(2, 0) shouldBe 2.toShort()
+            map.get(5, 0) shouldBe 5.toShort()
+            map.get(8, 0) shouldBe 0.toShort()
+            map.get(15, 0) shouldBe  15.toShort()
+        }
+                .config(enabled = false)
+
+        "test collisions" {
+            val map = RobinHoodHashtable(5)
+            map.put(1, 1)
+            map.put(2, 2)
+            map.put(9, 9)
+            map.put(10, 10)
+            map.print()
+            println("!!! Removing 9")
+            map.remove(9)
+            map.print()
+            println("!!! Removing 1")
+            map.remove(1)
+            map.print()
+            1 shouldBe 2
+            map.get(2, 0) shouldBe 2.toShort()
+            map.get(10, 0) shouldBe  10.toShort()
+        }
+//                .config(enabled = false)
 
         "test put then remove" {
             val map = RobinHoodHashtable(10)
@@ -106,22 +167,6 @@ class RobinHoodHashMapTests : StringSpec() {
         }
                 .config(enabled = false)
 
-        "test put then remove 3" {
-            val map = RobinHoodHashtable(4)
-            map.put(1, 1)
-            map.put(2, 2)
-            map.put(9, 9)
-            map.put(10, 10)
-            map.print()
-            map.remove(9)
-            map.print()
-            map.remove(1)
-            map.print()
-            map.get(2, 0) shouldBe 2.toShort()
-            map.get(10, 0) shouldBe  10.toShort()
-        }
-                .config(enabled = false)
-
         "write bunch random entries, then read them" {
             val limit = 1_000_000
             val map = RobinHoodHashtable(limit)
@@ -162,6 +207,6 @@ class RobinHoodHashMapTests : StringSpec() {
                 }
             }
         }
-//                .config(enabled = false)
+                .config(enabled = false)
     }
 }
