@@ -18,11 +18,13 @@ class RobinHoodHashMapTests : StringSpec() {
         }
     }
 
+    private val mapBuilder = RobinHoodHashtable.Builder()
+
     init {
         "minimum capacity: single put then get" {
             forAll(Gen.int(), short(), { key: Int, value: Short ->
                 val v = value.toShort()
-                val map = RobinHoodHashtable(1)
+                val map: RobinHoodHashtable.IntToShort = mapBuilder.create(1)
                 map.put(key, v)
                 map.size == 1 && map.get(key, 0) == v
             })
@@ -31,7 +33,7 @@ class RobinHoodHashMapTests : StringSpec() {
 
         "minimum capacity: single put then remove and get" {
             forAll(Gen.int(), short(), { k: Int, v: Short ->
-                val map = RobinHoodHashtable(1)
+                val map: RobinHoodHashtable.IntToShort = mapBuilder.create(1)
                 map.put(k, v)
                 map.print()
                 map.remove(k)
@@ -42,7 +44,7 @@ class RobinHoodHashMapTests : StringSpec() {
                 .config(enabled = false)
 
         "max entries reached" {
-            val map = RobinHoodHashtable(2)
+            val map: RobinHoodHashtable.IntToShort = mapBuilder.create(2)
             map.put(1, 1) shouldBe true
             map.put(2, 2) shouldBe true
             map.put(3, 3) shouldBe false
@@ -50,7 +52,7 @@ class RobinHoodHashMapTests : StringSpec() {
                 .config(enabled = false)
 
         "test collisions" {
-            val map = RobinHoodHashtable(4)
+            val map: RobinHoodHashtable.IntToShort = mapBuilder.create(4)
             map.put(1, 1)
             map.put(8, 8)
             map.put(15, 15)
@@ -64,7 +66,7 @@ class RobinHoodHashMapTests : StringSpec() {
                 .config(enabled = false)
 
         "remove with shift: stop at zero distance bucket" {
-            val map = RobinHoodHashtable(5)
+            val map: RobinHoodHashtable.IntToShort = mapBuilder.create(5)
             map.put(1, 1)
             map.put(8, 8)
             map.put(15, 15)
@@ -82,7 +84,7 @@ class RobinHoodHashMapTests : StringSpec() {
                 .config(enabled = false)
 
         "remove with shift: stop at free bucket" {
-            val map = RobinHoodHashtable(5)
+            val map: RobinHoodHashtable.IntToShort = mapBuilder.create(5)
             map.put(1, 1)
             map.put(2, 2)
             map.put(9, 9)
@@ -102,7 +104,7 @@ class RobinHoodHashMapTests : StringSpec() {
                 .config(enabled = false)
 
         "remove missing key" {
-            val map = RobinHoodHashtable(5)
+            val map: RobinHoodHashtable.IntToShort = mapBuilder.create(5)
             map.put(1, 1)
             map.put(3, 3)
             map.put(4, 4)
@@ -125,7 +127,7 @@ class RobinHoodHashMapTests : StringSpec() {
         "put and remove bunch of random entries, then get them" {
             val limit = 1_000_000
             val maxKey = limit * 5
-            val map = RobinHoodHashtable(limit)
+            val map: RobinHoodHashtable.IntToShort = mapBuilder.create(limit)
             val entries = hashMapOf<Int, Short>()
             val keys = RANDOM
                     .ints(-maxKey, maxKey)

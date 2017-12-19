@@ -15,7 +15,7 @@ class InvalidHashtable(msg: String) : Exception(msg)
 
 class ReadonlyHashtable : Exception()
 
-class RobinHoodHashtable private constructor(builder: Builder) {
+sealed class RobinHoodHashtable(builder: Builder) {
     enum class KeyType(size: Int) {
         INT(4), LONG(8)
     }
@@ -75,17 +75,13 @@ class RobinHoodHashtable private constructor(builder: Builder) {
         }
     }
 
-    class Builder(
-            val keyType: KeyType,
-            val valueType: ValueType,
-            // TODO Make optional for anonymous hashtables
-            var maxEntries: Int
-    ) {
-        internal val bucketLayout = BucketLayout.createForTypes(keyType, valueType)
-        internal val bucketsPerPage = PAGE_SIZE / bucketLayout.size
+    class Builder {
         internal var capacity: Int = 0
+        internal var maxEntries: Int = 0
         internal var numDataPages: Int = 0
-        internal var buffer: ByteBuffer? = null
+        internal var bucketsPerPage: Int = 0
+        internal lateinit var bucketLayout: BucketLayout
+        internal lateinit var buffer: ByteBuffer
 
         var writeMode: Boolean = false
             private set
@@ -96,7 +92,7 @@ class RobinHoodHashtable private constructor(builder: Builder) {
             return PRIMES.first { it >= minCapacity }
         }
 
-        internal fun calcDataPages(capacity: Int): Int {
+        internal fun calcDataPages(capacity: Int, bucketsPerPage: Int): Int {
             return (capacity + bucketsPerPage - 1) / bucketsPerPage
         }
 
@@ -104,53 +100,83 @@ class RobinHoodHashtable private constructor(builder: Builder) {
             return (1 + numDataPages) * PAGE_SIZE
         }
 
-        fun create(): RobinHoodHashtable {
-            writeMode = true
-            capacity = calcCapacity(maxEntries)
-            numDataPages = calcDataPages(capacity)
-            return RobinHoodHashtable(this)
+        internal fun calcBucketsPerPage(bucketLayout: BucketLayout): Int {
+            return PAGE_SIZE / bucketLayout.size
         }
 
-        fun create(path: Path): RobinHoodHashtable {
+        fun prepareCreateAnonymous(maxEntries: Int, bucketLayout: BucketLayout) {
+            this.maxEntries = maxEntries
+            this.bucketLayout = bucketLayout
+            capacity = calcCapacity(maxEntries)
+            bucketsPerPage = calcBucketsPerPage(bucketLayout)
+            numDataPages = calcDataPages(capacity, bucketsPerPage)
+            buffer = ByteBuffer.allocateDirect(calcBufferSize(numDataPages))
+                    .order(ByteOrder.nativeOrder())
+            writeMode = true
+        }
+
+        fun prepareCreate(path: Path, maxEntries: Int, bucketLayout: BucketLayout) {
             RandomAccessFile(path.toString(), "rw").use { file ->
                 capacity = calcCapacity(maxEntries)
-                numDataPages = calcDataPages(capacity)
+                bucketsPerPage = calcBucketsPerPage(bucketLayout)
+                numDataPages = calcDataPages(capacity, bucketsPerPage)
                 file.setLength(calcBufferSize(numDataPages).toLong())
                 val zerosPage = ByteArray(PAGE_SIZE)
-                (0 until numDataPages+1).forEach {
+                (0 until numDataPages + 1).forEach {
                     file.write(zerosPage)
                 }
                 file.seek(0)
                 val header = Header(capacity, maxEntries, numDataPages, 0)
                 file.write(header.toByteArray())
             }
-            return open(path)
         }
 
-        fun open(path: Path): RobinHoodHashtable {
+        fun prepareOpen(path: Path, bucketLayout: BucketLayout) {
             val mode = if (writeMode) "rw" else "r"
             val mapMode = if (writeMode) {
                 FileChannel.MapMode.READ_WRITE
             } else {
                 FileChannel.MapMode.READ_ONLY
             }
-            val file = RandomAccessFile(path.toString(), mode)
-            val channel = file.channel
-            val fileSize = channel.size()
-            val buffer = channel.map(mapMode, 0, fileSize)
-                    .order(ByteOrder.nativeOrder())
+            val buffer = RandomAccessFile(path.toString(), mode).use { file ->
+                val channel = file.channel
+                val fileSize = channel.size()
+                channel.map(mapMode, 0, fileSize)
+                        .order(ByteOrder.nativeOrder())
+            }
             val header = Header.read(buffer)
             capacity = header.capacity
             maxEntries = header.maxEntries
             numDataPages = header.numDataPages
             val expectedFileSize = calcBufferSize(numDataPages)
-            if (fileSize != expectedFileSize.toLong()) {
+            if (buffer.capacity() != expectedFileSize) {
                 throw InvalidHashtable(
-                        "File size must be $expectedFileSize but was: $fileSize"
+                        "File size must be $expectedFileSize but was: ${buffer.capacity()}"
                 )
             }
             this.buffer = buffer
-            return RobinHoodHashtable(this)
+        }
+
+        inline fun <reified T: RobinHoodHashtable> instantiate(): T {
+            return when (T::class) {
+                IntToShort::class -> IntToShort(this) as T
+                else -> throw IllegalArgumentException()
+            }
+        }
+
+        inline fun <reified T: RobinHoodHashtable> create(maxEntries: Int): T {
+            prepareCreateAnonymous(maxEntries, BucketLayout.create<T>())
+            return instantiate()
+        }
+
+        inline fun <reified T: RobinHoodHashtable> create(path: Path, maxEntries: Int): T {
+            prepareCreate(path, maxEntries, BucketLayout.create<T>())
+            return open(path)
+        }
+
+        inline fun <reified T: RobinHoodHashtable> open(path: Path): T {
+            prepareOpen(path, BucketLayout.create<T>())
+            return instantiate()
         }
     }
 
@@ -174,30 +200,33 @@ class RobinHoodHashtable private constructor(builder: Builder) {
         )
     }
 
-    internal data class BucketLayout(
+    data class BucketLayout(
             val meta: Int, val key: Int, val value: Int, val size: Int
     ) {
         companion object {
-            fun createForTypes(keyType: KeyType, valueType: ValueType): BucketLayout {
-                return when(keyType to valueType) {
-                    KeyType.INT to ValueType.INT,
-                    KeyType.INT to ValueType.FLOAT -> {
-                        BucketLayout(0, 4, 8, 12)
-                    }
-                    KeyType.INT to ValueType.DOUBLE -> {
-                        BucketLayout(0, 4, 8, 16)
-                    }
-                    KeyType.INT to ValueType.SHORT -> {
+            inline fun <reified T: RobinHoodHashtable> create(): BucketLayout {
+                return when(T::class) {
+                    IntToShort::class -> {
                         BucketLayout(4, 0, 6, 8)
                     }
-                    KeyType.LONG to ValueType.INT,
-                    KeyType.LONG to ValueType.FLOAT,
-                    KeyType.LONG to ValueType.SHORT -> {
-                        BucketLayout(12, 0, 8, 16)
-                    }
-                    KeyType.LONG to ValueType.DOUBLE -> {
-                        BucketLayout(16, 0, 8, 24)
-                    }
+//                    KeyType.INT to ValueType.INT,
+//                    KeyType.INT to ValueType.FLOAT -> {
+//                        BucketLayout(0, 4, 8, 12)
+//                    }
+//                    KeyType.INT to ValueType.DOUBLE -> {
+//                        BucketLayout(0, 4, 8, 16)
+//                    }
+//                    KeyType.INT to ValueType.SHORT -> {
+//                        BucketLayout(4, 0, 6, 8)
+//                    }
+//                    KeyType.LONG to ValueType.INT,
+//                    KeyType.LONG to ValueType.FLOAT,
+//                    KeyType.LONG to ValueType.SHORT -> {
+//                        BucketLayout(12, 0, 8, 16)
+//                    }
+//                    KeyType.LONG to ValueType.DOUBLE -> {
+//                        BucketLayout(16, 0, 8, 24)
+//                    }
                     else -> {
                         throw IllegalArgumentException()
                     }
@@ -214,27 +243,12 @@ class RobinHoodHashtable private constructor(builder: Builder) {
     private val bucketLayout: BucketLayout
     private val bucketsPerPage: Int
 
-    constructor(maxEntries: Int) :
-            this(Builder(KeyType.LONG, ValueType.DOUBLE, maxEntries))
-
     init {
-        val buffer = builder.buffer
-        if (buffer != null) {
-            allowWriteOperations = builder.writeMode
-            maxEntries = builder.maxEntries
-            capacity = builder.capacity
-            numDataPages = builder.numDataPages
-            this.buffer = buffer
-        } else {
-            allowWriteOperations = true
-            maxEntries = builder.maxEntries
-            capacity = builder.calcCapacity(builder.maxEntries)
-            numDataPages = builder.calcDataPages(capacity)
-            this.buffer = ByteBuffer.allocateDirect(builder.calcBufferSize(numDataPages))
-                    .order(ByteOrder.nativeOrder())
-            val header = Header(capacity, maxEntries, numDataPages, 0)
-            this.buffer.put(header.toByteArray())
-        }
+        allowWriteOperations = builder.writeMode
+        maxEntries = builder.maxEntries
+        capacity = builder.capacity
+        numDataPages = builder.numDataPages
+        buffer = builder.buffer
         bucketLayout = builder.bucketLayout
         bucketsPerPage = builder.bucketsPerPage
     }
@@ -338,6 +352,10 @@ class RobinHoodHashtable private constructor(builder: Builder) {
 
     private fun getBucketOffset(pageOffset: Int, bucketIx: Int): Int {
         return pageOffset + (bucketIx % bucketsPerPage) * bucketLayout.size
+    }
+
+    class IntToShort(builder: Builder) : RobinHoodHashtable(builder) {
+
     }
 
     fun put(key: Int, value: Short): Boolean {
