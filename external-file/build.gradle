@@ -1,9 +1,19 @@
+buildscript {
+    repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.github.erizo.gradle:jcstress-gradle-plugin:0.8.1'
+    }
+}
+
 plugins {
     id 'me.champeau.gradle.jmh' version '0.4.3'
 }
 
 apply plugin: 'java'
 apply plugin: 'me.champeau.gradle.jmh'
+apply plugin: 'com.github.erizo.gradle.jcstress'
 
 targetCompatibility = "1.8"
 sourceCompatibility = "1.8"
@@ -27,9 +37,14 @@ dependencies {
     compile 'org.lmdbjava:lmdbjava:0.6.0'
 
     compile 'org.openjdk.jmh:jmh-core:1.19'
+    compile 'org.openjdk.jcstress:jcstress-core:0.4'
 
     testCompile "org.jetbrains.kotlin:kotlin-reflect"
     testCompile 'io.kotlintest:kotlintest:2.0.7'
+}
+
+compileKotlin {
+    kotlinOptions.jvmTarget = "1.8"
 }
 
 task testFunc(type: Test) {
