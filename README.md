@@ -27,3 +27,5 @@ Run all the tests (unit, integration and functional):
 ```
 vagga test
 ```
+
+Also you can use gradle for everything, except functional tests.
