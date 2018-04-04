@@ -43,7 +43,6 @@ import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
 
 
 @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.TEST, numDataNodes=0)
-@ESIntegTestCase.SuppressLocalMode
 class ExternalFieldMapperIT : ESIntegTestCase() {
 
     lateinit var nodeDataDir: Path
@@ -256,7 +255,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         client().admin().indices().prepareDeleteTemplate("*").get()
 
         client().admin().indices().preparePutTemplate("test_template")
-                .setTemplate("test_*")
+                .setPatterns(listOf("test_*"))
                 .setSettings(indexSettings())
                 .setOrder(0)
                 .addMapping("product",

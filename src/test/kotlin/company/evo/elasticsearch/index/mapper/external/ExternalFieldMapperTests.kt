@@ -20,9 +20,11 @@ import java.util.Arrays
 
 import org.elasticsearch.common.compress.CompressedXContent
 import org.elasticsearch.common.xcontent.XContentFactory
+import org.elasticsearch.common.xcontent.XContentType
 import org.elasticsearch.index.IndexService
 import org.elasticsearch.index.mapper.DocumentMapperParser
 import org.elasticsearch.index.mapper.MapperParsingException
+import org.elasticsearch.index.mapper.SourceToParse
 import org.elasticsearch.plugins.Plugin
 import org.elasticsearch.test.ESSingleNodeTestCase
 import org.elasticsearch.test.InternalSettingsPlugin
@@ -60,8 +62,17 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                     .endObject().endObject()
                 .endObject().endObject().string()
         val mapper = parser.parse("type", CompressedXContent(mapping))
-        val parsedDoc = mapper.parse("test", "type", "1",
-            XContentFactory.jsonBuilder().startObject().field("ext_field", "value").endObject().bytes())
+        val parsedDoc = mapper.parse(
+                SourceToParse.source(
+                        "test", "type", "1",
+                        XContentFactory.jsonBuilder()
+                                .startObject()
+                                    .field("ext_field", "value")
+                                .endObject()
+                                .bytes(),
+                        XContentType.JSON
+                )
+        )
         val fields = parsedDoc.rootDoc().getFields("ext_field")
         assertNotNull(fields)
         assertEquals(Arrays.toString(fields), 0, fields.size)
@@ -89,13 +100,18 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                     .endObject()
                 .endObject().endObject().string()
         val mapper = parser.parse("type", CompressedXContent(mapping))
-        val parsedDoc = mapper.parse("test", "type", "1",
-                XContentFactory.jsonBuilder()
-                        .startObject()
-                            .field("id", 1)
-                            .field("ext_field", "value")
-                        .endObject()
-                        .bytes())
+        val parsedDoc = mapper.parse(
+                SourceToParse.source(
+                        "test", "type", "1",
+                        XContentFactory.jsonBuilder()
+                                .startObject()
+                                    .field("id", 1)
+                                    .field("ext_field", "value")
+                                .endObject()
+                                .bytes(),
+                        XContentType.JSON
+                )
+        )
         val fields = parsedDoc.rootDoc().getFields("ext_field")
         assertNotNull(fields)
         assertEquals(Arrays.toString(fields), 0, fields.size)

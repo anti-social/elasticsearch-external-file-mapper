@@ -419,6 +419,10 @@ class ExternalFileFieldMapper(
             private val values: FileValues
     ) : IndexNumericFieldData {
 
+        companion object {
+            private const val DEFAULT_VALUE = 0.0
+        }
+
         class AtomicUidKeyFieldData(
                 private val values: FileValues,
                 private val keyFieldData: AtomicFieldData
@@ -429,32 +433,37 @@ class ExternalFileFieldMapper(
                     private val uids: SortedBinaryDocValues
             ) : SortedNumericDoubleValues() {
 
-                private var doc: Int = -1
+                private var doc = -1
+                private var value = DEFAULT_VALUE
 
-                override fun setDocument(doc: Int) {
-                    this.doc = doc
-                    uids.setDocument(doc)
-                }
-
-                override fun valueAt(index: Int): Double {
-                    return try {
-                        values.get(getKey(), 0.0)
-                    } catch (e: NumberFormatException) {
-                        0.0
+                override fun advanceExact(target: Int): Boolean {
+                    doc = target
+                    return if (uids.advanceExact(doc)) {
+                        val uid = uids.nextValue().utf8ToString()
+                        val key = try {
+                            uid.toLong()
+                        } catch (e: NumberFormatException) {
+                            // Possibly it is indice created in 5.x
+                            try {
+                                Uid.createUid(uid).id().toLong()
+                            } catch (e: NumberFormatException) {
+                                return false
+                            }
+                        }
+                        if (values.contains(key)) {
+                            value = values.get(key, DEFAULT_VALUE)
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
                     }
                 }
 
-                override fun count(): Int {
-                    return try {
-                        if (values.contains(getKey())) 1 else 0
-                    } catch (e: NumberFormatException) {
-                        0
-                    }
-                }
+                override fun nextValue() = value
 
-                private fun getKey(): Long {
-                    return Uid.createUid(uids.valueAt(0).utf8ToString()).id().toLong()
-                }
+                override fun docValueCount() = 1
             }
 
             override fun getDoubleValues(): SortedNumericDoubleValues {
@@ -490,20 +499,25 @@ class ExternalFileFieldMapper(
                     private val keys: SortedNumericDocValues
             ) : SortedNumericDoubleValues() {
 
-                private var doc: Int = -1
+                private var value = DEFAULT_VALUE
 
-                override fun setDocument(doc: Int) {
-                    this.doc = doc
-                    keys.setDocument(doc)
+                override fun advanceExact(target: Int): Boolean {
+                    return if (keys.advanceExact(target)) {
+                        val key = keys.nextValue()
+                        if (values.contains(key)) {
+                            value = values.get(key, DEFAULT_VALUE)
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
                 }
 
-                override fun valueAt(index: Int): Double {
-                    return values.get(keys.valueAt(0), 0.0)
-                }
+                override fun nextValue() = value
 
-                override fun count(): Int {
-                    return if (values.contains(keys.valueAt(0))) 1 else 0
-                }
+                override fun docValueCount() = 1
             }
 
             override fun getDoubleValues(): SortedNumericDoubleValues {

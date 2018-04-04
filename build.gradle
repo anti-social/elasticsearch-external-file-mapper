@@ -1,5 +1,5 @@
 buildscript {
-    def esVersion = System.getProperty('esVersion', '5.6.8')
+    def esVersion = System.getProperty('esVersion', '6.0.1')
 
     repositories {
         mavenCentral()
@@ -23,14 +23,8 @@ esplugin {
     classname = 'company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin'
 }
 
-// TODO Remove all that stuff after upgrading Elasticsearch to 6.x
-ext.projectSubstitutions = [:]
-if (project.hasProperty('licenseFile')) {
-    project.licenseFile = project.file('LICENSE.txt')
-}
-if (project.hasProperty('noticeFile')) {
-    project.noticeFile = project.file('NOTICE.txt')
-}
+project.licenseFile = project.file('LICENSE.txt')
+project.noticeFile = project.file('NOTICE.txt')
 
 def version = project.file('project.version')
         .newDataInputStream()
