@@ -19,10 +19,6 @@ import org.apache.http.impl.client.HttpClients
 import org.apache.logging.log4j.Logger
 import org.apache.logging.log4j.LogManager
 
-import net.uaprom.htable.HashTable
-import net.uaprom.htable.TrieHashTable
-
-
 const val MAP_LOAD_FACTOR: Float = 0.75F
 
 internal data class FileKey(
@@ -32,7 +28,6 @@ internal data class FileKey(
 
 enum class ValuesStoreType {
     RAM,
-    FILE,
 }
 
 class ScheduleIntervals {
@@ -161,9 +156,6 @@ class ExternalFile(
                         getMemoryValuesProvider(
                                 fileLastModified, settings.scalingFactor)
                     }
-                    ValuesStoreType.FILE -> {
-                        getMappedFileValuesProvider(fileLastModified)
-                    }
                 }
             }
         } catch (e: NoSuchFileException) {
@@ -283,37 +275,6 @@ class ExternalFile(
         }
         logger.debug("Values size is ${valuesProvider.sizeBytes} bytes")
         return valuesProvider
-    }
-
-    private fun getMappedFileValuesProvider(lastModified: FileTime): FileValues.Provider {
-        val indexFilePath = getBinaryFilePath()
-        val indexLastModified = try {
-            Files.getLastModifiedTime(indexFilePath)
-        } catch (e: NoSuchFileException) {
-            FileTime.fromMillis(0)
-        }
-        if (indexLastModified < lastModified) {
-            val parsedValues = parse(getExternalFilePath())
-            val writer = TrieHashTable.Writer(
-                    HashTable.ValueSize.LONG, TrieHashTable.BitmaskSize.LONG)
-            val data = writer.dumpDoubles(parsedValues.keys, parsedValues.values)
-            val tmpPath = Files.createTempFile(dir, name, null)
-            try {
-                Files.newOutputStream(tmpPath).use {
-                    it.write(data)
-                }
-                Files.move(tmpPath, indexFilePath, StandardCopyOption.ATOMIC_MOVE)
-            } finally {
-                Files.deleteIfExists(tmpPath)
-            }
-            logger.debug("Dumped ${parsedValues.size} values (${data.size} bytes) " +
-                    "into file [${indexFilePath}]")
-        }
-        val (mappedData, dataSize) = FileChannel.open(indexFilePath, StandardOpenOption.READ).use {
-            Pair(it.map(FileChannel.MapMode.READ_ONLY, 0, it.size()), it.size())
-        }
-        logger.debug("Loaded values from file [$indexFilePath]")
-        return MappedFileValues.Provider(mappedData, dataSize, lastModified)
     }
 
     internal fun getCurrentVersion(): String? {

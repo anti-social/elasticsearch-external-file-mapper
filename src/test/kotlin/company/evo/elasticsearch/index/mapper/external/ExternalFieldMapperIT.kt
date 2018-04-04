@@ -169,33 +169,6 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         assertSortValues(response, arrayOf(1.3), arrayOf(1.2), arrayOf(1.1), arrayOf(Double.NEGATIVE_INFINITY))
     }
 
-    fun testMappedFileValues() {
-        val indexName = "test"
-        copyTestResources(indexName)
-
-        client().admin()
-                .indices()
-                .prepareCreate(indexName)
-                .addMapping(
-                        "product",
-                        jsonBuilder()
-                                .startObject().startObject("product").startObject("properties")
-                                    .startObject("name")
-                                        .field("type", "text")
-                                    .endObject()
-                                    .startObject("ext_price")
-                                        .field("type", "external_file")
-                                        .field("values_store_type", "file")
-                                        .field("update_interval", 600)
-                                    .endObject()
-                                .endObject().endObject().endObject())
-                .get()
-
-        indexTestDocuments(indexName)
-
-        checkHits()
-    }
-
     fun testCustomKeyField() {
         val indexName = "test"
         copyTestResources(indexName)

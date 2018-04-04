@@ -5,10 +5,6 @@ import java.nio.file.attribute.FileTime
 
 import gnu.trove.map.hash.*
 
-import net.uaprom.htable.HashTable
-import net.uaprom.htable.TrieHashTable
-
-
 interface FileValues {
     interface Provider {
         val sizeBytes: Long
@@ -326,29 +322,5 @@ class MemoryIntShortFileValues(
             return false
         }
         return values.containsKey(key.toInt())
-    }
-}
-
-class MappedFileValues(
-        private val values: HashTable.Reader
-) : FileValues {
-
-    class Provider(
-            private val data: ByteBuffer,
-            override val sizeBytes: Long,
-            override val lastModified: FileTime
-    ) : FileValues.Provider {
-
-        override fun get(): FileValues {
-            return MappedFileValues(TrieHashTable.Reader(data.slice()))
-        }
-    }
-
-    override fun get(key: Long, defaultValue: Double): Double {
-        return values.getDouble(key, defaultValue)
-    }
-
-    override fun contains(key: Long): Boolean {
-        return values.exists(key)
     }
 }
