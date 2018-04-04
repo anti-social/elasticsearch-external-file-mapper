@@ -15,3 +15,15 @@ Assemble the project:
 ```
 vagga assemble
 ```
+
+Default Elasticsearch version is `5.6.8`. To build against other version run with option:
+
+```
+vagga assemble -PesVersion=5.5.3
+```
+
+Run all the tests (unit, integration and functional):
+
+```
+vagga test
+```
