@@ -1,5 +1,5 @@
 buildscript {
-    def esVersion = System.getProperty('esVersion', '5.5.2')
+    def esVersion = System.getProperty('esVersion', '5.5.3')
 
     repositories {
         mavenCentral()
@@ -21,6 +21,13 @@ esplugin {
     name = 'mapper-external-file'
     description 'External file field mapper for ElasticSearch'
     classname = 'company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin'
+}
+
+if (project.hasProperty('licenseFile')) {
+    project.licenseFile = project.file('LICENSE.txt')
+}
+if (project.hasProperty('noticeFile')) {
+    project.noticeFile = project.file('NOTICE.txt')
 }
 
 def version = project.file('project.version')
