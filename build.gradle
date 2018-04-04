@@ -1,5 +1,5 @@
 buildscript {
-    def esVersion = System.getProperty('esVersion', '6.1.4')
+    def esVersion = System.getProperty('esVersion', '6.2.3')
 
     repositories {
         mavenCentral()

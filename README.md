@@ -16,13 +16,16 @@ Assemble the project:
 vagga assemble
 ```
 
-Default Elasticsearch version is `6.1.4`. To build against other version run with option:
+Default Elasticsearch version is `6.2.3`. To build against other version run with option:
 
 ```
-vagga assemble -PesVersion=6.1.3
+vagga assemble -PesVersion=6.1.4
 ```
 
-To build for Elasticsearch `6.0.x` switch to the branch `es-6.0`.
+To build for older Elasticsearch choose appropriate branch:
+
+- `es-6.0` for Elasticsearch `6.0.x`
+- `es-5.5` for Elasticsearch `5.5.x` or `5.6.x`
 
 Run all the tests (unit, integration and functional):
 
