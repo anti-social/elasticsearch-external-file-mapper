@@ -19,9 +19,8 @@ containers:
       - openjdk-8-jdk-headless
     - !EnsureDir /opt/gradle
     - !Unzip
-      url: https://services.gradle.org/distributions/gradle-4.0-bin.zip
-      sha256: 56bd2dde29ba2a93903c557da1745cafd72cdd8b6b0b83c05a40ed7896b79dfe
-      subdir: gradle-4.0
+      url: https://services.gradle.org/distributions/gradle-4.3-bin.zip
+      subdir: gradle-4.3
       path: /opt/gradle
     - !Sh ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle
 
