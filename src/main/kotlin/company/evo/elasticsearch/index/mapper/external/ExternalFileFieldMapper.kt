@@ -384,10 +384,20 @@ class ExternalFileFieldMapper(
         }
 
         override fun termQuery(value: Any, context: QueryShardContext): Query {
-            throw QueryShardException(context, "ExternalFile fields are not searcheable")
+            throw QueryShardException(
+                    context,
+                    "ExternalFile field type does not support search queries"
+            )
         }
 
-        override fun fielddataBuilder(): IndexFieldData.Builder {
+        override fun existsQuery(context: QueryShardContext?): Query {
+            throw QueryShardException(
+                    context,
+                    "ExternalField field type does not support exists queries"
+            )
+        }
+
+        override fun fielddataBuilder(fullyQualifiedIndexName: String): IndexFieldData.Builder {
             return IndexFieldData.Builder {
                 indexSettings, _, cache, breakerService, mapperService ->
 
@@ -403,8 +413,11 @@ class ExternalFileFieldMapper(
                         mapperService.fullName(keyFieldName)
                     }
                 }
-                val keyFieldData = keyFieldType.fielddataBuilder().build(
-                        indexSettings, keyFieldType, cache, breakerService, mapperService)
+                val keyFieldData = keyFieldType
+                        .fielddataBuilder(fullyQualifiedIndexName)
+                        .build(
+                                indexSettings, keyFieldType, cache, breakerService, mapperService
+                        )
                 val values = ExternalFileService.instance.getValues(indexSettings.index, name())
                 ExternalFileFieldData(
                         name(), indexSettings.index, keyFieldData, values)

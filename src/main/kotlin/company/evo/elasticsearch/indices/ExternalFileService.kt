@@ -36,6 +36,7 @@ import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException
 import org.elasticsearch.env.NodeEnvironment
 import org.elasticsearch.index.Index
 import org.elasticsearch.indices.cluster.IndicesClusterStateService.AllocatedIndices.IndexRemovalReason
+import org.elasticsearch.threadpool.Scheduler
 import org.elasticsearch.threadpool.ThreadPool
 
 
@@ -55,7 +56,7 @@ class ExternalFileService : AbstractLifecycleComponent {
 
     private data class ExternalFileField(
             val file: ExternalFile,
-            var task: ThreadPool.Cancellable
+            var task: Scheduler.Cancellable
     )
 
     @Inject
@@ -171,7 +172,7 @@ class ExternalFileService : AbstractLifecycleComponent {
     }
 }
 
-class ScatteredReschedulingRunnable: AbstractRunnable, ThreadPool.Cancellable {
+class ScatteredReschedulingRunnable: AbstractRunnable, Scheduler.Cancellable {
     private val runnable: () -> Unit
     private val executor: String
     private val threadPool: ThreadPool
