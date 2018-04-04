@@ -19,7 +19,6 @@ env:
 - TEST_SUITE=integ
 
 before_script:
-- vagga _build kotlin-sdk
 - vagga assemble --no-daemon
 
 script:
