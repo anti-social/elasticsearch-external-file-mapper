@@ -1,9 +1,17 @@
+import java.util.Date
 import com.carrotsearch.gradle.junit4.RandomizedTestingTask
+import com.jfrog.bintray.gradle.BintrayExtension
+import com.jfrog.bintray.gradle.RecordingCopyTask
 import org.elasticsearch.gradle.VersionProperties
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 buildscript {
-    val esVersion = System.getProperty("esVersion", "6.2.3")
+    val defaultEsVersion = "6.2.3"
+    val esVersion = if (hasProperty("esVersion")) {
+        property("esVersion")
+    } else {
+        defaultEsVersion
+    }
 
     repositories {
         mavenCentral()
@@ -18,6 +26,7 @@ plugins {
     idea
     java
     kotlin("jvm") version "1.2.31"
+    id("com.jfrog.bintray") version "1.7.3"
 }
 
 apply {
@@ -33,7 +42,7 @@ configure<org.elasticsearch.gradle.plugin.PluginPropertiesExtension> {
 project.setProperty("licenseFile", project.file("LICENSE.txt"))
 project.setProperty("noticeFile", project.file("NOTICE.txt"))
 
-val version =  project.file("project.version")
+val appVersion =  project.file("project.version")
         .readLines()
         .first()
         .toUpperCase()
@@ -45,7 +54,7 @@ val version =  project.file("project.version")
             }
         }
 val versions = VersionProperties.getVersions() as Map<String, String>
-project.version = "$version-es${versions["elasticsearch"]}"
+project.version = "$appVersion-es${versions["elasticsearch"]}"
 
 repositories {
     mavenCentral()
@@ -80,3 +89,36 @@ val testFunc by tasks.creating(Test::class) {
 }
 testFunc.outputs.upToDateWhen { false }
 
+bintray {
+    user = if (hasProperty("bintrayUser")) {
+        property("bintrayUser").toString()
+    } else {
+        System.getenv("BINTRAY_USER")
+    }
+    key = if (hasProperty("bintrayApiKey")) {
+        property("bintrayApiKey").toString()
+    } else {
+        System.getenv("BINTRAY_API_KEY")
+    }
+    pkg(delegateClosureOf<BintrayExtension.PackageConfig> {
+        repo = "elasticsearch"
+        name = project.name
+        userOrg = "evo"
+        setLicenses("Apache-2.0")
+        setLabels("elasticsearch-plugin", "external-file-mapper")
+        vcsUrl = "https://github.com/anti-social/elasticsearch-external-field-mapper.git"
+        version(delegateClosureOf<BintrayExtension.VersionConfig> {
+            name = appVersion
+            released = Date().toString()
+            vcsTag = "v$appVersion"
+        })
+    })
+    filesSpec(delegateClosureOf<RecordingCopyTask> {
+        val distributionsDir = buildDir.resolve("distributions")
+        from(distributionsDir)
+        include("*-$appVersion-*.zip")
+        into(".")
+    })
+    publish = true
+    dryRun = hasProperty("bintrayDryRun")
+}
