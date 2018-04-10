@@ -18,9 +18,13 @@ env:
 
 before_script:
 - vagga _build jdk9
-- vagga assemble --no-daemon
 
 script:
+- |
+  if [[ $TRAVIS_TAG == v* ]]; then
+    ASSEMBLE_ARGS="-Prelease=true"
+  fi
+  vagga assemble --no-daemon $ASSEMBLE_ARGS
 - vagga test
 
 after_success:
