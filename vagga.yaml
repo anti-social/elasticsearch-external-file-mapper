@@ -18,10 +18,8 @@ containers:
     - !UbuntuRelease { codename: artful }
     - !UbuntuUniverse
     - !Install
-      - openjdk-9-jdk-headless
-    # If we install certificates together with java 9 it will also install java 8
-    - !Install
       - ca-certificates-java
+      - openjdk-9-jdk-headless
     - !Sh update-ca-certificates
     - !EnsureDir /opt/gradle
     - !Unzip
