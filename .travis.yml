@@ -18,10 +18,10 @@ env:
 
 before_script:
 - vagga _build jdk9
-- vagga assemble --no-daemon --stacktrace
+- vagga assemble --no-daemon
 
 script:
-- vagga test --no-daemon --stacktrace
+- vagga test
 
 after_script:
 - |
