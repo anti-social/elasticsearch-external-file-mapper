@@ -25,12 +25,18 @@ buildscript {
 plugins {
     idea
     java
-    kotlin("jvm") version "1.2.31"
+    kotlin("jvm") version "1.3.21"
     id("com.jfrog.bintray") version "1.7.3"
 }
 
 apply {
     plugin("elasticsearch.esplugin")
+}
+
+subprojects {
+    apply {
+        plugin("java")
+    }
 }
 
 configure<org.elasticsearch.gradle.plugin.PluginPropertiesExtension> {
@@ -61,11 +67,10 @@ repositories {
 }
 
 dependencies {
-    compile(kotlin("stdlib"))
-    compile("org.apache.httpcomponents", "httpcore", versions["httpcore"])
-    compile("org.apache.httpcomponents", "httpclient", versions["httpclient"])
+    implementation(kotlin("stdlib-jdk8"))
+    runtime(kotlin("stdlib-jdk8"))
+    compile("company.evo:persistent-hashmap")
     compile("commons-logging", "commons-logging", versions["commonslogging"])
-    compile("net.sf.trove4j", "trove4j", "3.0.3")
 }
 
 tasks.withType(KotlinCompile::class.java).all {

@@ -38,14 +38,14 @@ import org.hamcrest.Matchers.*
 import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
-import company.evo.elasticsearch.indices.MemoryIntShortFileValues
+// import company.evo.elasticsearch.indices.MemoryIntShortFileValues
 import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
+import company.evo.persistent.hashmap.simple.SimpleHashMapEnv_Int_Float
 
 
 @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.TEST, numDataNodes=0)
 class ExternalFieldMapperIT : ESIntegTestCase() {
 
-    lateinit var nodeDataDir: Path
     lateinit var extFileService: ExternalFileService
 
     override fun nodePlugins(): Collection<Class<out Plugin>> {
@@ -63,364 +63,403 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                 .put(Environment.PATH_DATA_SETTING.key, dataPath)
                 .build()
         val node = internalCluster().startNode(settings)
-        this.extFileService = internalCluster()
+        extFileService = internalCluster()
                 .getInstance(ExternalFileService::class.java, node)
         val nodePaths = internalCluster()
                 .getInstance(NodeEnvironment::class.java, node)
                 .nodeDataPaths()
         assertEquals(1, nodePaths.size)
-        this.nodeDataDir = nodePaths[0]
+    }
+
+    private fun initMap(name: String) {
+        SimpleHashMapEnv_Int_Float.Builder()
+                .useUnmapHack(true)
+                .open(
+                        extFileService.getExternalFileDir(name)
+                                .also { Files.createDirectories(it) }
+                )
+                .use { mapEnv ->
+                    mapEnv.openMap().use { map ->
+                        map.put(1, 1.1F)
+                        map.put(2, 1.2F)
+                        map.put(3, 1.3F)
+                    }
+                }
     }
 
     fun testDefaults() {
         val indexName = "test"
-        copyTestResources(indexName)
+        initMap("ext_price")
 
-        client().admin()
-                .indices()
-                .prepareCreate(indexName)
-                .addMapping(
-                        "product",
-                        jsonBuilder()
-                        .startObject().startObject("product").startObject("properties")
-                            .startObject("name")
-                                .field("type", "text")
-                            .endObject()
-                            .startObject("ext_price")
-                                .field("type", "external_file")
-                                .field("update_interval", 600)
-                            .endObject()
-                        .endObject().endObject().endObject())
-                .get()
-
-        indexTestDocuments(indexName)
-
-        checkHits()
-    }
-
-    fun testScalingFactor() {
-        val indexName = "test"
-        copyTestResources(indexName)
-
-        client().admin()
-                .indices()
-                .prepareCreate(indexName)
-                .addMapping(
-                        "product",
-                        jsonBuilder()
-                                .startObject().startObject("product").startObject("properties")
-                                    .startObject("name")
-                                        .field("type", "text")
-                                    .endObject()
-                                    .startObject("ext_price")
-                                        .field("type", "external_file")
-                                        .field("update_interval", 600)
-                                        .field("scaling_factor", 100)
-                                    .endObject()
-                                .endObject().endObject().endObject())
-                .get()
-
-        val index = resolveIndex(indexName)
-        val fileSettings = extFileService.getFileSettings(index, "ext_price")
-        assertThat(fileSettings?.scalingFactor, equalTo(100L))
-        assertThat(extFileService.getValues(index, "ext_price"),
-                `is`(instanceOf(MemoryIntShortFileValues::class.java)))
-
-        indexTestDocuments(indexName)
-
-        checkHits()
-    }
-
-    fun testSorting() {
-        val indexName = "test"
-        copyTestResources(indexName)
-
-        client().admin()
-                .indices()
-                .prepareCreate(indexName)
-                .addMapping(
-                        "product",
-                        jsonBuilder()
-                                .startObject().startObject("product").startObject("properties")
-                                    .startObject("name")
-                                        .field("type", "text")
-                                    .endObject()
-                                    .startObject("ext_price")
-                                        .field("type", "external_file")
-                                        .field("update_interval", 600)
-                                    .endObject()
-                                .endObject().endObject().endObject())
-                .get()
-
-        indexTestDocuments(indexName)
-
-        val response = client().search(
-                searchRequest()
-                        .source(
-                                searchSource()
-                                        .sort("ext_price", SortOrder.DESC)
-                                        .explain(false)))
-                .actionGet()
-        assertNoFailures(response)
-        val hits = response.hits
-        assertThat(hits.hits.size, equalTo(4))
-        assertSearchHits(response, "3", "2", "1", "4")
-        assertSortValues(response, arrayOf(1.3), arrayOf(1.2), arrayOf(1.1), arrayOf(Double.NEGATIVE_INFINITY))
-    }
-
-    fun testCustomKeyField() {
-        val indexName = "test"
-        copyTestResources(indexName)
-
-        client().admin()
-                .indices()
-                .prepareCreate(indexName)
-                .addMapping(
-                        "product",
-                        jsonBuilder()
-                                .startObject().startObject("product").startObject("properties")
-                                    .startObject("id")
-                                        .field("type", "long")
-                                    .endObject()
-                                    .startObject("name")
-                                        .field("type", "text")
-                                    .endObject()
-                                    .startObject("ext_price")
-                                        .field("type", "external_file")
-                                        .field("key_field", "id")
-                                        .field("update_interval", 600)
-                                    .endObject()
-                                .endObject().endObject().endObject())
-                .get()
-
-        client().prepareIndex("test", "product", "p1")
-                .setSource(
-                        jsonBuilder()
-                                .startObject()
-                                    .field("id", 1)
-                                    .field("name", "Bergamont")
-                                .endObject())
-                .get()
-        client().prepareIndex("test", "product", "p2")
-                .setSource(
-                        jsonBuilder()
-                                .startObject()
-                                    .field("id", 2)
-                                    .field("name", "Specialized")
-                                .endObject())
-                .get()
-        client().prepareIndex("test", "product", "p3")
-                .setSource(
-                        jsonBuilder()
-                                .startObject()
-                                    .field("id", 3)
-                                    .field("name", "Cannondale")
-                                .endObject())
-                .get()
-        client().prepareIndex("test", "product", "p4")
-                .setSource(
-                        jsonBuilder()
-                                .startObject()
-                                    .field("id", 4)
-                                    .field("name", "Honda")
-                                .endObject())
-                .get()
-
-        client().admin().indices().prepareRefresh().get()
-
-        val response = client().search(
-                searchRequest().source(
-                        searchSource().query(
-                                functionScoreQuery(
-                                        fieldValueFactorFunction("ext_price").missing(0.0)))
-                                .explain(false)))
-                .actionGet()
-        assertNoFailures(response)
-        val hits = response.hits
-        assertThat(hits.hits.size, equalTo(4))
-        assertThat(hits.getAt(0).id, equalTo("p3"))
-        assertThat(hits.getAt(0).score, equalTo(1.3f))
-        assertThat(hits.getAt(1).id, equalTo("p2"))
-        assertThat(hits.getAt(1).score, equalTo(1.2f))
-        assertThat(hits.getAt(2).id, equalTo("p1"))
-        assertThat(hits.getAt(2).score, equalTo(1.1f))
-        assertThat(hits.getAt(3).id, equalTo("p4"))
-        assertThat(hits.getAt(3).score, equalTo(0.0f))
-    }
-
-    fun testTemplate() {
-        val indexName = "test_index"
-        copyTestResources(indexName)
-
-        client().admin().indices().prepareDeleteTemplate("*").get()
-
-        client().admin().indices().preparePutTemplate("test_template")
-                .setPatterns(listOf("test_*"))
-                .setSettings(indexSettings())
-                .setOrder(0)
-                .addMapping("product",
-                        jsonBuilder()
-                                .startObject().startObject("product").startObject("properties")
-                                    .startObject("name")
-                                        .field("type", "text")
-                                    .endObject()
-                                    .startObject("ext_price")
-                                        .field("type", "external_file")
-                                        .field("update_interval", 600)
-                                    .endObject()
-                                .endObject().endObject().endObject())
-                .get()
-
-        val tmplResp = client().admin().indices().prepareGetTemplates().get()
-        assertThat(tmplResp.indexTemplates, hasSize(1))
-
-        indexTestDocuments(indexName)
-
-        checkHits()
-    }
-
-    fun testDeleteIndex() {
-        val indexName = "test"
-        copyTestResources(indexName)
-
-        client().admin()
-                .indices()
-                .prepareCreate(indexName)
-                .get()
-        // External files should be cleaned up when deleting index
-        client().admin()
-                .indices()
-                .prepareDelete(indexName)
-                .get()
-        client().admin()
-                .indices()
-                .prepareCreate(indexName)
-                .addMapping(
-                        "product",
-                        jsonBuilder()
-                        .startObject().startObject("product").startObject("properties")
-                            .startObject("name")
-                                .field("type", "text")
-                            .endObject()
-                            .startObject("ext_price")
-                                .field("type", "external_file")
-                                .field("update_interval", 600)
-                            .endObject()
-                        .endObject().endObject().endObject())
-                .get()
-
-        indexTestDocuments(indexName)
-
-        val response = client().search(
-                searchRequest()
-                        .source(
-                                searchSource()
-                                        .query(functionScoreQuery(
-                                                fieldValueFactorFunction("ext_price")
-                                                        .missing(0.0)))
-                                        .explain(false)))
-                .actionGet()
-        assertNoFailures(response)
-        val hits = response.hits
-        assertThat(hits.hits.size, equalTo(4))
-        assertThat(hits.getAt(0).score, equalTo(0.0f))
-        assertThat(hits.getAt(1).score, equalTo(0.0f))
-        assertThat(hits.getAt(2).score, equalTo(0.0f))
-        assertThat(hits.getAt(3).score, equalTo(0.0f))
-    }
-
-    fun testUpdateMapping() {
-        val indexName = "test"
-        copyTestResources(indexName)
-
-        client().admin()
-                .indices()
-                .prepareCreate(indexName)
-                .addMapping(
-                        "product",
-                        jsonBuilder()
-                                .startObject().startObject("product").startObject("properties")
-                                    .startObject("name")
-                                        .field("type", "text")
-                                    .endObject()
-                                    .startObject("ext_price")
-                                        .field("type", "external_file")
-                                        .field("update_interval", 600)
-                                    .endObject()
-                                .endObject().endObject().endObject())
-                .get()
-
-        assertThat(
-                extFileService
-                        .getFileSettings(resolveIndex(indexName), "ext_price")
-                        ?.updateInterval,
-                equalTo(600L))
-
-        client().admin()
-                .indices()
-                .preparePutMapping(indexName)
-                .setType("product")
-                .setSource(
-                        jsonBuilder()
-                                .startObject().startObject("product").startObject("properties")
-                                    .startObject("name")
-                                        .field("type", "text")
-                                    .endObject()
-                                    .startObject("ext_price")
-                                        .field("type", "external_file")
-                                        .field("update_interval", 60)
-                                    .endObject()
-                                .endObject().endObject().endObject())
-                .get()
-
-        assertThat(
-                extFileService
-                        .getFileSettings(resolveIndex(indexName), "ext_price")
-                        ?.updateInterval,
-                equalTo(60L))
-    }
-
-    private fun copyTestResources(indexName: String) {
-        val extFilePath = nodeDataDir
-                .resolve("external_files")
-                .resolve(indexName)
-                .resolve("ext_price.txt")
-        Files.createDirectories(extFilePath.parent)
-        val resourcePath = getDataPath("/indices")
-        Files.newInputStream(resourcePath.resolve("ext_price.txt")).use {
-            logger.warn(">>> Copied external file to: $extFilePath")
-            Files.copy(it, extFilePath)
+        val mapping = jsonBuilder().obj {
+            obj("product") {
+                obj("properties") {
+                    obj("id") {
+                        field("type", "integer")
+                    }
+                    obj("name") {
+                        field("type", "text")
+                    }
+                    obj("ext_price") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "ext_price")
+                    }
+                }
+            }
         }
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .addMapping("product", mapping)
+                .get()
+
+        indexTestDocuments(indexName)
+
+        checkHits()
     }
+
+    // fun testScalingFactor() {
+    //     val indexName = "test"
+    //     copyTestResources(indexName)
+    //
+    //     val mapping = jsonBuilder().obj {
+    //         obj("product") {
+    //             obj("properties") {
+    //                 obj("name") {
+    //                     field("type", "text")
+    //                 }
+    //                 obj("ext_price") {
+    //                     field("type", "external_file")
+    //                     field("update_interval", 600)
+    //                     field("scaling_factor", 100)
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     client().admin()
+    //             .indices()
+    //             .prepareCreate(indexName)
+    //             .addMapping("product", mapping)
+    //             .get()
+    //
+    //     val index = resolveIndex(indexName)
+    //     // val fileSettings = extFileService.getFileSettings(index, "ext_price")
+    //     // assertThat(fileSettings?.scalingFactor, equalTo(100L))
+    //     // assertThat(extFileService.getValues(index, "ext_price"),
+    //     //         `is`(instanceOf(MemoryIntShortFileValues::class.java)))
+    //     //
+    //     // indexTestDocuments(indexName)
+    //     //
+    //     // checkHits()
+    // }
+    //
+    // fun testSorting() {
+    //     val indexName = "test"
+    //     copyTestResources(indexName)
+    //
+    //     val mapping = jsonBuilder().obj {
+    //         obj("product") {
+    //             obj("name") {
+    //                 field("type", "text")
+    //             }
+    //             obj("ext_price") {
+    //                 field("type", "external_file")
+    //                 field("update_interval", 600)
+    //             }
+    //         }
+    //     }
+    //     client().admin()
+    //             .indices()
+    //             .prepareCreate(indexName)
+    //             .addMapping("product", mapping)
+    //             .get()
+    //
+    //     indexTestDocuments(indexName)
+    //
+    //     val response = client().search(
+    //             searchRequest()
+    //                     .source(
+    //                             searchSource()
+    //                                     .sort("ext_price", SortOrder.DESC)
+    //                                     .explain(false)))
+    //             .actionGet()
+    //     assertNoFailures(response)
+    //     val hits = response.hits
+    //     assertThat(hits.hits.size, equalTo(4))
+    //     assertSearchHits(response, "3", "2", "1", "4")
+    //     assertSortValues(response, arrayOf(1.3), arrayOf(1.2), arrayOf(1.1), arrayOf(Double.NEGATIVE_INFINITY))
+    // }
+    //
+    // fun testCustomKeyField() {
+    //     val indexName = "test"
+    //     copyTestResources(indexName)
+    //
+    //     val mapping = jsonBuilder().obj {
+    //         obj("product") {
+    //             obj("properties") {
+    //                 obj("id") {
+    //                     field("type", "long")
+    //                 }
+    //                 obj("name") {
+    //                     field("type", "text")
+    //                 }
+    //                 obj("ext_price") {
+    //                     field("type", "external_file")
+    //                     field("key_field", "id")
+    //                     field("update_interval", 600)
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     client().admin()
+    //             .indices()
+    //             .prepareCreate(indexName)
+    //             .addMapping("product", mapping)
+    //             .get()
+    //
+    //     client().prepareIndex("test", "product", "p1")
+    //             .setSource(
+    //                     jsonBuilder().obj {
+    //                         field("id", 1)
+    //                         field("name", "Bergamont")
+    //                     }
+    //             )
+    //             .get()
+    //     client().prepareIndex("test", "product", "p2")
+    //             .setSource(
+    //                     jsonBuilder().obj {
+    //                         field("id", 2)
+    //                         field("name", "Specialized")
+    //                     }
+    //             )
+    //             .get()
+    //     client().prepareIndex("test", "product", "p3")
+    //             .setSource(
+    //                     jsonBuilder().obj {
+    //                         field("id", 3)
+    //                         field("name", "Cannondale")
+    //                     }
+    //             )
+    //             .get()
+    //     client().prepareIndex("test", "product", "p4")
+    //             .setSource(
+    //                     jsonBuilder().obj {
+    //                         field("id", 4)
+    //                         field("name", "Honda")
+    //                     }
+    //             )
+    //             .get()
+    //
+    //     client().admin().indices().prepareRefresh().get()
+    //
+    //     val response = client().search(
+    //             searchRequest().source(
+    //                     searchSource().query(
+    //                             functionScoreQuery(
+    //                                     fieldValueFactorFunction("ext_price").missing(0.0)))
+    //                             .explain(false)))
+    //             .actionGet()
+    //     assertNoFailures(response)
+    //     val hits = response.hits
+    //     assertThat(hits.hits.size, equalTo(4))
+    //     assertThat(hits.getAt(0).id, equalTo("p3"))
+    //     assertThat(hits.getAt(0).score, equalTo(1.3f))
+    //     assertThat(hits.getAt(1).id, equalTo("p2"))
+    //     assertThat(hits.getAt(1).score, equalTo(1.2f))
+    //     assertThat(hits.getAt(2).id, equalTo("p1"))
+    //     assertThat(hits.getAt(2).score, equalTo(1.1f))
+    //     assertThat(hits.getAt(3).id, equalTo("p4"))
+    //     assertThat(hits.getAt(3).score, equalTo(0.0f))
+    // }
+    //
+    // fun testTemplate() {
+    //     val indexName = "test_index"
+    //     copyTestResources(indexName)
+    //
+    //     client().admin().indices().prepareDeleteTemplate("*").get()
+    //
+    //     val mapping = jsonBuilder().obj {
+    //         obj("product") {
+    //             obj("properties") {
+    //                 obj("name") {
+    //                     field("type", "text")
+    //                 }
+    //                 obj("ext_price") {
+    //                     field("type", "external_file")
+    //                     field("update_interval", 600)
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     client().admin().indices().preparePutTemplate("test_template")
+    //             .setPatterns(listOf("test_*"))
+    //             .setSettings(indexSettings())
+    //             .setOrder(0)
+    //             .addMapping("product", mapping)
+    //             .get()
+    //
+    //     val tmplResp = client().admin().indices().prepareGetTemplates().get()
+    //     assertThat(tmplResp.indexTemplates, hasSize(1))
+    //
+    //     indexTestDocuments(indexName)
+    //
+    //     checkHits()
+    // }
+    //
+    // fun testDeleteIndex() {
+    //     val indexName = "test"
+    //     copyTestResources(indexName)
+    //
+    //     val mapping = jsonBuilder().obj {
+    //         obj("product") {
+    //             obj("properties") {
+    //                 obj("name") {
+    //                     field("type", "text")
+    //                 }
+    //                 obj("ext_price") {
+    //                     field("type", "external_file")
+    //                     field("update_interval", 600)
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     client().admin()
+    //             .indices()
+    //             .prepareCreate(indexName)
+    //             .get()
+    //     // External files should be cleaned up when deleting index
+    //     client().admin()
+    //             .indices()
+    //             .prepareDelete(indexName)
+    //             .get()
+    //     client().admin()
+    //             .indices()
+    //             .prepareCreate(indexName)
+    //             .addMapping("product", mapping)
+    //             .get()
+    //
+    //     indexTestDocuments(indexName)
+    //
+    //     val response = client().search(
+    //             searchRequest()
+    //                     .source(
+    //                             searchSource()
+    //                                     .query(functionScoreQuery(
+    //                                             fieldValueFactorFunction("ext_price")
+    //                                                     .missing(0.0)))
+    //                                     .explain(false)))
+    //             .actionGet()
+    //     assertNoFailures(response)
+    //     val hits = response.hits
+    //     assertThat(hits.hits.size, equalTo(4))
+    //     assertThat(hits.getAt(0).score, equalTo(0.0f))
+    //     assertThat(hits.getAt(1).score, equalTo(0.0f))
+    //     assertThat(hits.getAt(2).score, equalTo(0.0f))
+    //     assertThat(hits.getAt(3).score, equalTo(0.0f))
+    // }
+    //
+    // fun testUpdateMapping() {
+    //     val indexName = "test"
+    //     copyTestResources(indexName)
+    //
+    //     val mapping = jsonBuilder().obj {
+    //         obj("product") {
+    //             obj("properties") {
+    //                 obj("name") {
+    //                     field("type", "text")
+    //                 }
+    //                 obj("ext_price") {
+    //                     field("type", "external_file")
+    //                     field("update_interval", 600)
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     client().admin()
+    //             .indices()
+    //             .prepareCreate(indexName)
+    //             .addMapping("product", mapping)
+    //             .get()
+    //
+    //     // assertThat(
+    //     //         extFileService
+    //     //                 .getFileSettings(resolveIndex(indexName), "ext_price")
+    //     //                 ?.updateInterval,
+    //     //         equalTo(600L))
+    //
+    //     val newMapping = jsonBuilder().obj {
+    //         obj("product") {
+    //             obj("properties") {
+    //                 obj("name") {
+    //                     field("type", "text")
+    //                 }
+    //                 obj("ext_price") {
+    //                     field("type", "external_file")
+    //                     field("update_interval", 60)
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     client().admin()
+    //             .indices()
+    //             .preparePutMapping(indexName)
+    //             .setType("product")
+    //             .setSource(newMapping)
+    //             .get()
+    //
+    //     // assertThat(
+    //     //         extFileService
+    //     //                 .getFileSettings(resolveIndex(indexName), "ext_price")
+    //     //                 ?.updateInterval,
+    //     //         equalTo(60L))
+    // }
+    //
+    // private fun copyTestResources(indexName: String) {
+    //     val extFilePath = nodeDataDir
+    //             .resolve("external_files")
+    //             .resolve(indexName)
+    //             .resolve("ext_price.txt")
+    //     Files.createDirectories(extFilePath.parent)
+    //     val resourcePath = getDataPath("/indices")
+    //     Files.newInputStream(resourcePath.resolve("ext_price.txt")).use {
+    //         logger.warn(">>> Copied external file to: $extFilePath")
+    //         Files.copy(it, extFilePath)
+    //     }
+    // }
 
     private fun indexTestDocuments(indexName: String) {
         client().prepareIndex(indexName, "product", "1")
                 .setSource(
-                        jsonBuilder()
-                                .startObject()
-                                    .field("name", "Bergamont")
-                                .endObject())
+                        jsonBuilder().obj {
+                            field("id", 1)
+                            field("name", "Bergamont")
+                        }
+                )
                 .get()
         client().prepareIndex(indexName, "product", "2")
                 .setSource(
-                        jsonBuilder()
-                                .startObject()
-                                    .field("name", "Specialized")
-                                .endObject())
+                        jsonBuilder().obj {
+                            field("id", 2)
+                            field("name", "Specialized")
+                        }
+                )
                 .get()
         client().prepareIndex(indexName, "product", "3")
                 .setSource(
-                        jsonBuilder()
-                                .startObject()
-                                    .field("name", "Cannondale")
-                                .endObject())
+                        jsonBuilder().obj {
+                            field("id", 3)
+                            field("name", "Cannondale")
+                        }
+                )
                 .get()
         client().prepareIndex(indexName, "product", "4")
                 .setSource(
-                        jsonBuilder()
-                                .startObject()
-                                    .field("name", "Honda")
-                                .endObject())
+                        jsonBuilder().obj {
+                            field("id", 4)
+                            field("name", "Honda")
+                        }
+                )
                 .get()
 
         client().admin().indices().prepareRefresh().get()

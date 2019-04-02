@@ -28,15 +28,6 @@ containers:
       path: /opt/gradle
     - !Sh ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle
 
-  web-server:
-    setup:
-    - !Ubuntu xenial
-    - !Tar
-      url: https://github.com/cortesi/devd/releases/download/v0.7/devd-0.7-linux64.tgz
-      sha256: 3bf919c081f46d4a0e1e5c8f35d943b949db39811f4b99177d90465ebb17fd4c
-      subdir: devd-0.7-linux64
-      path: /opt/devd
-
   elastic:
     environ:
       JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
@@ -131,23 +122,15 @@ commands:
     description: Runs java virtual machine
     run: [java]
 
-  serve-test-files: &serve-test-files !Command
-    description: Runs web server that serves files for tests
-    container: web-server
-    run: /opt/devd/devd -p 8080 ./src/test/resources/indices
-
-  test-func: !Supervise
+  test-func: !Command
     options: |
       Usage: vagga test-func [--no-daemon] [options]
 
       Options:
         --no-daemon  Run build without daemon
-    children:
-      web-server: *serve-test-files
-      test: !Command
-        <<: *cmd-opts
-        run: |
-            gradle testFunc $VAGGACLI_NO_DAEMON
+    <<: *cmd-opts
+    run: |
+      gradle testFunc $VAGGACLI_NO_DAEMON
 
   test: !Command
     <<: *cmd-opts

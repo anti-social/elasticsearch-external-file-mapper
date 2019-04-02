@@ -20,23 +20,35 @@ import java.util.Arrays
 
 import org.elasticsearch.common.bytes.BytesReference
 import org.elasticsearch.common.compress.CompressedXContent
-import org.elasticsearch.common.xcontent.XContentFactory
+import org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder
 import org.elasticsearch.common.xcontent.XContentType
 import org.elasticsearch.index.IndexService
 import org.elasticsearch.index.mapper.DocumentMapperParser
-import org.elasticsearch.index.mapper.MapperParsingException
 import org.elasticsearch.index.mapper.SourceToParse
 import org.elasticsearch.plugins.Plugin
 import org.elasticsearch.test.ESSingleNodeTestCase
 import org.elasticsearch.test.InternalSettingsPlugin
 
-import org.hamcrest.Matchers.*
-
 import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
 import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
+import company.evo.persistent.hashmap.simple.SimpleHashMapEnv_Int_Float
+import org.elasticsearch.common.xcontent.XContentBuilder
+import org.elasticsearch.index.mapper.MapperParsingException
+import org.hamcrest.Matchers.containsString
 
+import java.nio.file.Files
+
+inline fun XContentBuilder.obj(
+        name: String? = null,
+        block: XContentBuilder.() -> Unit
+): XContentBuilder {
+    if (name != null) startObject(name) else startObject()
+    block()
+    endObject()
+    return this
+}
 
 class ExternalFieldMapperTests : ESSingleNodeTestCase() {
 
@@ -48,6 +60,22 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         parser = indexService.mapperService().documentMapperParser()
     }
 
+    private fun initMap(name: String, entries: Map<Int, Float>) {
+        SimpleHashMapEnv_Int_Float.Builder()
+                .useUnmapHack(true)
+                .open(
+                        ExternalFileService.instance.getExternalFileDir(name)
+                                .also { Files.createDirectories(it) }
+                )
+                .use { mapEnv ->
+                    mapEnv.openMap().use { map ->
+                        entries.forEach { k, v ->
+                            map.put(k, v)
+                        }
+                    }
+                }
+    }
+
     override fun getPlugins(): Collection<Class<out Plugin>> {
         return pluginList(
                 InternalSettingsPlugin::class.java,
@@ -55,201 +83,110 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
     }
 
     fun testDefaults() {
-        val mapping = XContentFactory.jsonBuilder()
-                .startObject().startObject("type")
-                    .startObject("properties").startObject("ext_field")
-                        .field("type", "external_file")
-                        .field("update_interval", 600)
-                    .endObject().endObject()
-                .endObject().endObject()
+        initMap("test_ext_file", mapOf(1 to 1.1F))
+
+        val mapping = jsonBuilder().obj {
+            obj("type") {
+                obj("properties") {
+                    obj("id") {
+                        field("type", "integer")
+                    }
+                    obj("ext_field") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "test_ext_file")
+                    }
+                }
+            }
+        }
         val mapper = parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
+
         val parsedDoc = mapper.parse(
                 SourceToParse.source(
                         "test", "type", "1",
                         BytesReference.bytes(
-                                XContentFactory.jsonBuilder()
-                                        .startObject()
-                                            .field("ext_field", "value")
-                                        .endObject()
+                                jsonBuilder().obj {
+                                    field("id", 1)
+                                    field("ext_field", "value")
+                                }
                         ),
                         XContentType.JSON
                 )
         )
-        val fields = parsedDoc.rootDoc().getFields("ext_field")
-        assertNotNull(fields)
-        assertEquals(Arrays.toString(fields), 0, fields.size)
-        assertEquals(
-                600L,
-                ExternalFileService.instance
-                        .getFileSettings(indexService.index(), "ext_field")
-                        ?.updateInterval)
+        val testExtFileFields = parsedDoc.rootDoc().getFields("ext_field")
+        assertNotNull(testExtFileFields)
+        assertEquals(Arrays.toString(testExtFileFields), 0, testExtFileFields.size)
+        val idFields = parsedDoc.rootDoc().getFields("id")
+        assertNotNull(idFields)
+        assertEquals(Arrays.toString(idFields), 2, idFields.size)
     }
 
-    fun testIdKeyField() {
-        val mapping = XContentFactory.jsonBuilder()
-                .startObject().startObject("type")
-                    .startObject("properties")
-                        .startObject("id")
-                            .field("type", "long")
-                            .field("index", false)
-                            .field("doc_values", true)
-                        .endObject()
-                        .startObject("ext_field")
-                            .field("type", "external_file")
-                            .field("update_interval", 600)
-                            .field("key_field", "id")
-                        .endObject()
-                    .endObject()
-                .endObject().endObject()
-        val mapper = parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
-        val parsedDoc = mapper.parse(
-                SourceToParse.source(
-                        "test", "type", "1",
-                        BytesReference.bytes(
-                                XContentFactory.jsonBuilder()
-                                        .startObject()
-                                            .field("id", 1)
-                                            .field("ext_field", "value")
-                                        .endObject()
-                        ),
-                        XContentType.JSON
-                )
-        )
-        val fields = parsedDoc.rootDoc().getFields("ext_field")
-        assertNotNull(fields)
-        assertEquals(Arrays.toString(fields), 0, fields.size)
-    }
-
-    fun testTimeParsing() {
-        val mapping = XContentFactory.jsonBuilder()
-                .startObject().startObject("type")
-                    .startObject("properties")
-                        .startObject("ext_field_1")
-                            .field("type", "external_file")
-                            .field("update_interval", "600")
-                            .field("timeout", 60)
-                        .endObject()
-                        .startObject("ext_field_2")
-                            .field("type", "external_file")
-                            .field("update_interval", "2h")
-                            .field("timeout", "5m")
-                        .endObject()
-                    .endObject()
-                .endObject().endObject()
-        val mapper = parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
-        val extFieldMapper1 = mapper.mappers().getMapper("ext_field_1")
-        assertThat(extFieldMapper1, `is`(instanceOf(ExternalFileFieldMapper::class.java)))
-        val fileSettings1 = (extFieldMapper1 as ExternalFileFieldMapper)
-                .fieldType()
-                .fileSettings()
-        assertEquals(fileSettings1?.updateInterval, 600L)
-        assertEquals(fileSettings1?.timeout, 60)
-        val extFieldMapper2 = mapper.mappers().getMapper("ext_field_2")
-        assertThat(extFieldMapper2, `is`(instanceOf(ExternalFileFieldMapper::class.java)))
-        val fileSettings2 = (extFieldMapper2 as ExternalFileFieldMapper)
-                .fieldType()
-                .fileSettings()
-        assertEquals(fileSettings2?.updateInterval, 7200L)
-        assertEquals(fileSettings2?.timeout, 300)
-    }
-
-    fun testUpdateScatterParsing() {
-        val mapping = XContentFactory.jsonBuilder()
-                .startObject().startObject("type")
-                    .startObject("properties")
-                        .startObject("ext_field_1")
-                            .field("type", "external_file")
-                            .field("update_interval", 60)
-                            .field("update_scatter", "10%")
-                        .endObject()
-                        .startObject("ext_field_2")
-                            .field("type", "external_file")
-                            .field("update_interval", 3600)
-                            .field("update_scatter", "5m")
-                        .endObject()
-                        .startObject("ext_field_3")
-                            .field("type", "external_file")
-                            .field("update_interval", 3600)
-                            .field("update_scatter", 600)
-                        .endObject()
-                    .endObject()
-                .endObject().endObject()
-        val mapper = parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
-        val extFieldMapper1 = mapper.mappers().getMapper("ext_field_1")
-        assertThat(extFieldMapper1, `is`(instanceOf(ExternalFileFieldMapper::class.java)))
-        val fileSettings1 = (extFieldMapper1 as ExternalFileFieldMapper)
-                .fieldType()
-                .fileSettings()
-        assertEquals(60L, fileSettings1?.updateInterval)
-        assertEquals(6L, fileSettings1?.updateScatter)
-        val extFieldMapper2 = mapper.mappers().getMapper("ext_field_2")
-        assertThat(extFieldMapper2, `is`(instanceOf(ExternalFileFieldMapper::class.java)))
-        val fileSettings2 = (extFieldMapper2 as ExternalFileFieldMapper)
-                .fieldType()
-                .fileSettings()
-        assertEquals(3600L, fileSettings2?.updateInterval)
-        assertEquals(300L, fileSettings2?.updateScatter)
-        val extFieldMapper3 = mapper.mappers().getMapper("ext_field_3")
-        assertThat(extFieldMapper3, `is`(instanceOf(ExternalFileFieldMapper::class.java)))
-        val fileSettings3 = (extFieldMapper3 as ExternalFileFieldMapper)
-                .fieldType()
-                .fileSettings()
-        assertEquals(3600L, fileSettings3?.updateInterval)
-        assertEquals(600L, fileSettings3?.updateScatter)
-    }
-
-// TODO find a way to check existing of the key_field
-//    fun testNonexistentIdKeyField() {
-//        val mapping = XContentFactory.jsonBuilder()
-//                .startObject().startObject("type")
-//                    .startObject("properties")
-//                        .startObject("ext_field")
-//                            .field("type", "external_file")
-//                            .field("key_field", "id")
-//                        .endObject()
-//                    .endObject()
-//                .endObject().endObject().string()
-//        try {
-//            parser.parse("type", CompressedXContent(mapping))
-//            fail("Expected a mapper parsing exception")
-//        } catch (e: MapperParsingException) {
-//            assertThat(e.message, containsString("[id] field not found"))
-//        }
-//    }
-
-    fun testDocValuesNotAllowed() {
-        val mapping = XContentFactory.jsonBuilder()
-                .startObject().startObject("type")
-                    .startObject("properties").startObject("ext_field")
-                        .field("type", "external_file")
-                        .field("update_interval", 600)
-                        .field("doc_values", false)
-                    .endObject().endObject()
-                .endObject().endObject()
+    // TODO find a way to check existing of the key_field when parsing mapping
+    fun testNonexistentIdKeyField() {
+        val mapping = jsonBuilder().obj {
+            obj("type") {
+                obj("properties") {
+                    obj("ext_field") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "test_ext_file")
+                    }
+                }
+            }
+        }
         try {
             parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
             fail("Expected a mapper parsing exception")
         } catch (e: MapperParsingException) {
-            assertThat(e.message,
-                containsString("Setting [doc_values] cannot be modified for field [ext_field]"))
+            assertThat(e.message, containsString("[id] field not found"))
+        }
+    }
+
+    fun testDocValuesNotAllowed() {
+        val mapping = jsonBuilder().obj {
+            obj("type") {
+                obj("properties") {
+                    obj("ext_field") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "test_ext_file")
+                        field("doc_values", false)
+                    }
+                }
+            }
+        }
+        try {
+            parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
+            fail("Expected a mapper parsing exception")
+        } catch (e: MapperParsingException) {
+            assertThat(
+                    e.message,
+                    containsString("[doc_values] parameter cannot be modified for field [ext_field]")
+            )
         }
     }
 
     fun testStoredNotAllowed() {
-        val mapping = XContentFactory.jsonBuilder()
-                .startObject().startObject("type")
-                    .startObject("properties").startObject("ext_field")
-                        .field("type", "external_file")
-                        .field("update_interval", 600)
-                        .field("stored", true)
-                    .endObject().endObject()
-                .endObject().endObject()
+        val mapping = jsonBuilder().obj {
+            obj("type") {
+                obj("properties") {
+                    obj("ext_field") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "test_ext_file")
+                        field("stored", true)
+                    }
+                }
+            }
+        }
         try {
             parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
             fail("Expected a mapper parsing exception")
         } catch (e: MapperParsingException) {
-            assertThat(e.message,
-                containsString("Setting [stored] cannot be modified for field [ext_field]"))
+            assertThat(
+                    e.message,
+                    containsString("[stored] parameter cannot be modified for field [ext_field]")
+            )
         }
     }
 }
