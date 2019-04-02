@@ -1,0 +1,12 @@
+// grant {
+grant codeBase "file:/home/alexk/.vagga/.cache/gradle-cache/modules-2/files-2.1/org.agrona/agrona/0.9.33/ab024dca68064fc0f1690d79e2574a6467a2af77/agrona-0.9.33.jar" {
+  permission java.lang.RuntimePermission "accessClassInPackage.sun.misc";
+  permission java.lang.RuntimePermission "accessDeclaredMembers";
+  permission java.lang.reflect.ReflectPermission "suppressAccessChecks";
+
+};
+grant codeBase "file:/home/alexk/projects/elasticsearch-external-field-mapper/library/build/libs/library.jar" {
+  permission java.lang.RuntimePermission "accessClassInPackage.sun.misc";
+  permission java.lang.RuntimePermission "accessDeclaredMembers";
+  permission java.lang.reflect.ReflectPermission "suppressAccessChecks";
+};

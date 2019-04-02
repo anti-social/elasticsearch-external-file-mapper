@@ -77,6 +77,9 @@ class ExternalFileService : AbstractLifecycleComponent {
 
     @Synchronized
     fun addField(index: Index, fieldName: String, fileSettings: FileSettings) {
+        logger.info(UnsafeAccess.ARRAY_BYTE_BASE_OFFSET)
+        logger.info(org.agrona.UnsafeAccess.ARRAY_BYTE_BASE_OFFSET)
+
         logger.debug("Adding external file field: [${index.name}] [$fieldName]")
         val extDir = getDirForIndex(index)
         Files.createDirectories(extDir)

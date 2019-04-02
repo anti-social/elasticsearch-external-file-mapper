@@ -33,6 +33,12 @@ apply {
     plugin("elasticsearch.esplugin")
 }
 
+subprojects {
+    apply {
+        plugin("java")
+    }
+}
+
 configure<org.elasticsearch.gradle.plugin.PluginPropertiesExtension> {
     name = "mapper-external-file"
     description = "External file field mapper for ElasticSearch"
@@ -62,10 +68,12 @@ repositories {
 
 dependencies {
     compile(kotlin("stdlib"))
+    implementation(project(":library"))
     compile("org.apache.httpcomponents", "httpcore", versions["httpcore"])
     compile("org.apache.httpcomponents", "httpclient", versions["httpclient"])
     compile("commons-logging", "commons-logging", versions["commonslogging"])
     compile("net.sf.trove4j", "trove4j", "3.0.3")
+    compile("org.agrona", "agrona", "0.9.33")
 }
 
 tasks.withType(KotlinCompile::class.java).all {
