@@ -6,7 +6,7 @@ import org.elasticsearch.gradle.VersionProperties
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 buildscript {
-    val defaultEsVersion = "6.2.3"
+    val defaultEsVersion = "6.5.4"
     val esVersion = if (hasProperty("esVersion")) {
         property("esVersion")
     } else {
@@ -75,13 +75,8 @@ tasks.withType(KotlinCompile::class.java).all {
 }
 
 // Have no idea how to fix this better, the fix needed from kotlin plugin >= 1.1.4
-val kotlinTestClassesDir = File(buildDir, "classes/kotlin/test")
-run {
-    val test by java.sourceSets
-    test.output.classesDir = kotlinTestClassesDir
-}
 tasks.withType(RandomizedTestingTask::class.java).all {
-    testClassesDir = kotlinTestClassesDir
+    testClassesDirs = files(File(buildDir, "classes/kotlin/test"))
 }
 
 val testFunc by tasks.creating(Test::class) {

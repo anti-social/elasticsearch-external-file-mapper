@@ -18,6 +18,7 @@ package company.evo.elasticsearch.index.mapper.external
 
 import java.util.Arrays
 
+import org.elasticsearch.common.bytes.BytesReference
 import org.elasticsearch.common.compress.CompressedXContent
 import org.elasticsearch.common.xcontent.XContentFactory
 import org.elasticsearch.common.xcontent.XContentType
@@ -60,16 +61,17 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                         .field("type", "external_file")
                         .field("update_interval", 600)
                     .endObject().endObject()
-                .endObject().endObject().string()
-        val mapper = parser.parse("type", CompressedXContent(mapping))
+                .endObject().endObject()
+        val mapper = parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
         val parsedDoc = mapper.parse(
                 SourceToParse.source(
                         "test", "type", "1",
-                        XContentFactory.jsonBuilder()
-                                .startObject()
-                                    .field("ext_field", "value")
-                                .endObject()
-                                .bytes(),
+                        BytesReference.bytes(
+                                XContentFactory.jsonBuilder()
+                                        .startObject()
+                                            .field("ext_field", "value")
+                                        .endObject()
+                        ),
                         XContentType.JSON
                 )
         )
@@ -98,17 +100,18 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                             .field("key_field", "id")
                         .endObject()
                     .endObject()
-                .endObject().endObject().string()
-        val mapper = parser.parse("type", CompressedXContent(mapping))
+                .endObject().endObject()
+        val mapper = parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
         val parsedDoc = mapper.parse(
                 SourceToParse.source(
                         "test", "type", "1",
-                        XContentFactory.jsonBuilder()
-                                .startObject()
-                                    .field("id", 1)
-                                    .field("ext_field", "value")
-                                .endObject()
-                                .bytes(),
+                        BytesReference.bytes(
+                                XContentFactory.jsonBuilder()
+                                        .startObject()
+                                            .field("id", 1)
+                                            .field("ext_field", "value")
+                                        .endObject()
+                        ),
                         XContentType.JSON
                 )
         )
@@ -132,8 +135,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                             .field("timeout", "5m")
                         .endObject()
                     .endObject()
-                .endObject().endObject().string()
-        val mapper = parser.parse("type", CompressedXContent(mapping))
+                .endObject().endObject()
+        val mapper = parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
         val extFieldMapper1 = mapper.mappers().getMapper("ext_field_1")
         assertThat(extFieldMapper1, `is`(instanceOf(ExternalFileFieldMapper::class.java)))
         val fileSettings1 = (extFieldMapper1 as ExternalFileFieldMapper)
@@ -170,8 +173,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                             .field("update_scatter", 600)
                         .endObject()
                     .endObject()
-                .endObject().endObject().string()
-        val mapper = parser.parse("type", CompressedXContent(mapping))
+                .endObject().endObject()
+        val mapper = parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
         val extFieldMapper1 = mapper.mappers().getMapper("ext_field_1")
         assertThat(extFieldMapper1, `is`(instanceOf(ExternalFileFieldMapper::class.java)))
         val fileSettings1 = (extFieldMapper1 as ExternalFileFieldMapper)
@@ -222,9 +225,9 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                         .field("update_interval", 600)
                         .field("doc_values", false)
                     .endObject().endObject()
-                .endObject().endObject().string()
+                .endObject().endObject()
         try {
-            parser.parse("type", CompressedXContent(mapping))
+            parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
             fail("Expected a mapper parsing exception")
         } catch (e: MapperParsingException) {
             assertThat(e.message,
@@ -240,9 +243,9 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                         .field("update_interval", 600)
                         .field("stored", true)
                     .endObject().endObject()
-                .endObject().endObject().string()
+                .endObject().endObject()
         try {
-            parser.parse("type", CompressedXContent(mapping))
+            parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
             fail("Expected a mapper parsing exception")
         } catch (e: MapperParsingException) {
             assertThat(e.message,

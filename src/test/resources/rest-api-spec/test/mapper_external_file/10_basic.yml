@@ -13,6 +13,7 @@
                 type: double
               ext_price:
                 type: external_file
+                update_interval: 600
 
 - do:
     index:
