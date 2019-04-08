@@ -17,9 +17,9 @@
 package company.evo.elasticsearch.index.mapper.external
 
 import java.nio.file.Files
-import java.nio.file.Path
 import java.util.Collections
 
+import org.elasticsearch.action.search.SearchResponse
 import org.elasticsearch.client.Requests.searchRequest
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder
@@ -35,10 +35,10 @@ import org.elasticsearch.test.hamcrest.ElasticsearchAssertions.*
 
 import org.hamcrest.Matchers.*
 
+import org.junit.Assert
 import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
-// import company.evo.elasticsearch.indices.MemoryIntShortFileValues
 import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
 import company.evo.persistent.hashmap.simple.SimpleHashMapEnv_Int_Float
 
@@ -46,7 +46,7 @@ import company.evo.persistent.hashmap.simple.SimpleHashMapEnv_Int_Float
 @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.TEST, numDataNodes=0)
 class ExternalFieldMapperIT : ESIntegTestCase() {
 
-    lateinit var extFileService: ExternalFileService
+    private lateinit var extFileService: ExternalFileService
 
     override fun nodePlugins(): Collection<Class<out Plugin>> {
         return Collections.singleton(ExternalFileMapperPlugin::class.java)
@@ -71,7 +71,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         assertEquals(1, nodePaths.size)
     }
 
-    private fun initMap(name: String) {
+    private fun initMap(name: String, entries: Map<Int, Float>? = null) {
         SimpleHashMapEnv_Int_Float.Builder()
                 .useUnmapHack(true)
                 .open(
@@ -80,16 +80,16 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                 )
                 .use { mapEnv ->
                     mapEnv.openMap().use { map ->
-                        map.put(1, 1.1F)
-                        map.put(2, 1.2F)
-                        map.put(3, 1.3F)
+                        entries?.forEach { (k, v) ->
+                            map.put(k, v)
+                        }
                     }
                 }
     }
 
     fun testDefaults() {
         val indexName = "test"
-        initMap("ext_price")
+        initMap("ext_price", mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
 
         val mapping = jsonBuilder().obj {
             obj("product") {
@@ -116,7 +116,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
 
         indexTestDocuments(indexName)
 
-        checkHits()
+        assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
     }
 
     // fun testScalingFactor() {
@@ -151,282 +151,139 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
     //     //
     //     // indexTestDocuments(indexName)
     //     //
-    //     // checkHits()
+    //     // assertHits()
     // }
-    //
-    // fun testSorting() {
-    //     val indexName = "test"
-    //     copyTestResources(indexName)
-    //
-    //     val mapping = jsonBuilder().obj {
-    //         obj("product") {
-    //             obj("name") {
-    //                 field("type", "text")
-    //             }
-    //             obj("ext_price") {
-    //                 field("type", "external_file")
-    //                 field("update_interval", 600)
-    //             }
-    //         }
-    //     }
-    //     client().admin()
-    //             .indices()
-    //             .prepareCreate(indexName)
-    //             .addMapping("product", mapping)
-    //             .get()
-    //
-    //     indexTestDocuments(indexName)
-    //
-    //     val response = client().search(
-    //             searchRequest()
-    //                     .source(
-    //                             searchSource()
-    //                                     .sort("ext_price", SortOrder.DESC)
-    //                                     .explain(false)))
-    //             .actionGet()
-    //     assertNoFailures(response)
-    //     val hits = response.hits
-    //     assertThat(hits.hits.size, equalTo(4))
-    //     assertSearchHits(response, "3", "2", "1", "4")
-    //     assertSortValues(response, arrayOf(1.3), arrayOf(1.2), arrayOf(1.1), arrayOf(Double.NEGATIVE_INFINITY))
-    // }
-    //
-    // fun testCustomKeyField() {
-    //     val indexName = "test"
-    //     copyTestResources(indexName)
-    //
-    //     val mapping = jsonBuilder().obj {
-    //         obj("product") {
-    //             obj("properties") {
-    //                 obj("id") {
-    //                     field("type", "long")
-    //                 }
-    //                 obj("name") {
-    //                     field("type", "text")
-    //                 }
-    //                 obj("ext_price") {
-    //                     field("type", "external_file")
-    //                     field("key_field", "id")
-    //                     field("update_interval", 600)
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     client().admin()
-    //             .indices()
-    //             .prepareCreate(indexName)
-    //             .addMapping("product", mapping)
-    //             .get()
-    //
-    //     client().prepareIndex("test", "product", "p1")
-    //             .setSource(
-    //                     jsonBuilder().obj {
-    //                         field("id", 1)
-    //                         field("name", "Bergamont")
-    //                     }
-    //             )
-    //             .get()
-    //     client().prepareIndex("test", "product", "p2")
-    //             .setSource(
-    //                     jsonBuilder().obj {
-    //                         field("id", 2)
-    //                         field("name", "Specialized")
-    //                     }
-    //             )
-    //             .get()
-    //     client().prepareIndex("test", "product", "p3")
-    //             .setSource(
-    //                     jsonBuilder().obj {
-    //                         field("id", 3)
-    //                         field("name", "Cannondale")
-    //                     }
-    //             )
-    //             .get()
-    //     client().prepareIndex("test", "product", "p4")
-    //             .setSource(
-    //                     jsonBuilder().obj {
-    //                         field("id", 4)
-    //                         field("name", "Honda")
-    //                     }
-    //             )
-    //             .get()
-    //
-    //     client().admin().indices().prepareRefresh().get()
-    //
-    //     val response = client().search(
-    //             searchRequest().source(
-    //                     searchSource().query(
-    //                             functionScoreQuery(
-    //                                     fieldValueFactorFunction("ext_price").missing(0.0)))
-    //                             .explain(false)))
-    //             .actionGet()
-    //     assertNoFailures(response)
-    //     val hits = response.hits
-    //     assertThat(hits.hits.size, equalTo(4))
-    //     assertThat(hits.getAt(0).id, equalTo("p3"))
-    //     assertThat(hits.getAt(0).score, equalTo(1.3f))
-    //     assertThat(hits.getAt(1).id, equalTo("p2"))
-    //     assertThat(hits.getAt(1).score, equalTo(1.2f))
-    //     assertThat(hits.getAt(2).id, equalTo("p1"))
-    //     assertThat(hits.getAt(2).score, equalTo(1.1f))
-    //     assertThat(hits.getAt(3).id, equalTo("p4"))
-    //     assertThat(hits.getAt(3).score, equalTo(0.0f))
-    // }
-    //
-    // fun testTemplate() {
-    //     val indexName = "test_index"
-    //     copyTestResources(indexName)
-    //
-    //     client().admin().indices().prepareDeleteTemplate("*").get()
-    //
-    //     val mapping = jsonBuilder().obj {
-    //         obj("product") {
-    //             obj("properties") {
-    //                 obj("name") {
-    //                     field("type", "text")
-    //                 }
-    //                 obj("ext_price") {
-    //                     field("type", "external_file")
-    //                     field("update_interval", 600)
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     client().admin().indices().preparePutTemplate("test_template")
-    //             .setPatterns(listOf("test_*"))
-    //             .setSettings(indexSettings())
-    //             .setOrder(0)
-    //             .addMapping("product", mapping)
-    //             .get()
-    //
-    //     val tmplResp = client().admin().indices().prepareGetTemplates().get()
-    //     assertThat(tmplResp.indexTemplates, hasSize(1))
-    //
-    //     indexTestDocuments(indexName)
-    //
-    //     checkHits()
-    // }
-    //
-    // fun testDeleteIndex() {
-    //     val indexName = "test"
-    //     copyTestResources(indexName)
-    //
-    //     val mapping = jsonBuilder().obj {
-    //         obj("product") {
-    //             obj("properties") {
-    //                 obj("name") {
-    //                     field("type", "text")
-    //                 }
-    //                 obj("ext_price") {
-    //                     field("type", "external_file")
-    //                     field("update_interval", 600)
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     client().admin()
-    //             .indices()
-    //             .prepareCreate(indexName)
-    //             .get()
-    //     // External files should be cleaned up when deleting index
-    //     client().admin()
-    //             .indices()
-    //             .prepareDelete(indexName)
-    //             .get()
-    //     client().admin()
-    //             .indices()
-    //             .prepareCreate(indexName)
-    //             .addMapping("product", mapping)
-    //             .get()
-    //
-    //     indexTestDocuments(indexName)
-    //
-    //     val response = client().search(
-    //             searchRequest()
-    //                     .source(
-    //                             searchSource()
-    //                                     .query(functionScoreQuery(
-    //                                             fieldValueFactorFunction("ext_price")
-    //                                                     .missing(0.0)))
-    //                                     .explain(false)))
-    //             .actionGet()
-    //     assertNoFailures(response)
-    //     val hits = response.hits
-    //     assertThat(hits.hits.size, equalTo(4))
-    //     assertThat(hits.getAt(0).score, equalTo(0.0f))
-    //     assertThat(hits.getAt(1).score, equalTo(0.0f))
-    //     assertThat(hits.getAt(2).score, equalTo(0.0f))
-    //     assertThat(hits.getAt(3).score, equalTo(0.0f))
-    // }
-    //
-    // fun testUpdateMapping() {
-    //     val indexName = "test"
-    //     copyTestResources(indexName)
-    //
-    //     val mapping = jsonBuilder().obj {
-    //         obj("product") {
-    //             obj("properties") {
-    //                 obj("name") {
-    //                     field("type", "text")
-    //                 }
-    //                 obj("ext_price") {
-    //                     field("type", "external_file")
-    //                     field("update_interval", 600)
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     client().admin()
-    //             .indices()
-    //             .prepareCreate(indexName)
-    //             .addMapping("product", mapping)
-    //             .get()
-    //
-    //     // assertThat(
-    //     //         extFileService
-    //     //                 .getFileSettings(resolveIndex(indexName), "ext_price")
-    //     //                 ?.updateInterval,
-    //     //         equalTo(600L))
-    //
-    //     val newMapping = jsonBuilder().obj {
-    //         obj("product") {
-    //             obj("properties") {
-    //                 obj("name") {
-    //                     field("type", "text")
-    //                 }
-    //                 obj("ext_price") {
-    //                     field("type", "external_file")
-    //                     field("update_interval", 60)
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     client().admin()
-    //             .indices()
-    //             .preparePutMapping(indexName)
-    //             .setType("product")
-    //             .setSource(newMapping)
-    //             .get()
-    //
-    //     // assertThat(
-    //     //         extFileService
-    //     //                 .getFileSettings(resolveIndex(indexName), "ext_price")
-    //     //                 ?.updateInterval,
-    //     //         equalTo(60L))
-    // }
-    //
-    // private fun copyTestResources(indexName: String) {
-    //     val extFilePath = nodeDataDir
-    //             .resolve("external_files")
-    //             .resolve(indexName)
-    //             .resolve("ext_price.txt")
-    //     Files.createDirectories(extFilePath.parent)
-    //     val resourcePath = getDataPath("/indices")
-    //     Files.newInputStream(resourcePath.resolve("ext_price.txt")).use {
-    //         logger.warn(">>> Copied external file to: $extFilePath")
-    //         Files.copy(it, extFilePath)
-    //     }
-    // }
+
+    fun testSorting() {
+        val indexName = "test"
+        initMap("ext_price", mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+
+        val mapping = jsonBuilder().obj {
+            obj("product") {
+                obj("properties") {
+                    obj("id") {
+                        field("type", "integer")
+                    }
+                    obj("name") {
+                        field("type", "text")
+                    }
+                    obj("ext_price") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "ext_price")
+                    }
+                }
+            }
+        }
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .addMapping("product", mapping)
+                .get()
+
+        indexTestDocuments(indexName)
+
+        assertHitsWithSort(
+                searchWithSort(),
+                listOf("3" to arrayOf(1.3), "2" to arrayOf(1.2), "1" to arrayOf(1.1), "4" to arrayOf(Double.NEGATIVE_INFINITY))
+        )
+    }
+
+    fun testTemplate() {
+        val indexName = "test_index"
+        initMap("ext_price", mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+
+        client().admin().indices().prepareDeleteTemplate("*").get()
+
+        val mapping = jsonBuilder().obj {
+            obj("product") {
+                obj("properties") {
+                    obj("id") {
+                        field("type", "integer")
+                    }
+                    obj("name") {
+                        field("type", "text")
+                    }
+                    obj("ext_price") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "ext_price")
+                    }
+                }
+            }
+        }
+        client().admin().indices().preparePutTemplate("test_template")
+                .setPatterns(listOf("test_*"))
+                .setSettings(indexSettings())
+                .setOrder(0)
+                .addMapping("product", mapping)
+                .get()
+
+        val tmplResp = client().admin().indices().prepareGetTemplates().get()
+        assertThat(tmplResp.indexTemplates, hasSize(1))
+
+        indexTestDocuments(indexName)
+
+        assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
+    }
+
+    fun testUpdateMapping() {
+        val indexName = "test"
+        initMap("ext_price", mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+        initMap("new_ext_price", mapOf(1 to -1.1F, 2 to -1.2F, 3 to -1.3F))
+
+        val mapping = jsonBuilder().obj {
+            obj("product") {
+                obj("properties") {
+                    obj("id") {
+                        field("type", "integer")
+                    }
+                    obj("name") {
+                        field("type", "text")
+                    }
+                    obj("ext_price") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "ext_price")
+                    }
+                }
+            }
+        }
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .addMapping("product", mapping)
+                .get()
+
+        indexTestDocuments(indexName)
+        assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
+
+        val newMapping = jsonBuilder().obj {
+            obj("product") {
+                obj("properties") {
+                    obj("id") {
+                        field("type", "integer")
+                    }
+                    obj("name") {
+                        field("type", "text")
+                    }
+                    obj("ext_price") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "new_ext_price")
+                    }
+                }
+            }
+        }
+        client().admin()
+                .indices()
+                .preparePutMapping(indexName)
+                .setType("product")
+                .setSource(newMapping)
+                .get()
+
+        assertHits(search(), listOf("4" to 0.0F, "1" to -1.1F, "2" to -1.2F, "3" to -1.3F))
+    }
 
     private fun indexTestDocuments(indexName: String) {
         client().prepareIndex(indexName, "product", "1")
@@ -466,26 +323,58 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
 
     }
 
-    private fun checkHits() {
-        val response = client().search(
+    private fun search(): SearchResponse {
+        val query = functionScoreQuery(
+                fieldValueFactorFunction("ext_price").missing(0.0)
+        )
+        return client().search(
+                searchRequest().source(
+                        searchSource()
+                                .query(query)
+                                .explain(false)
+                )
+        )
+                .actionGet()
+                .also(::assertNoFailures)
+    }
+
+    private fun assertHits(response: SearchResponse, scores: List<Pair<String, Float>>) {
+        val hits = response.hits
+        assertThat(hits.hits.size, equalTo(scores.size))
+        scores.forEachIndexed { ix, (id, score) ->
+            val hit = hits.getAt(ix)
+            assertThat(hit.id, equalTo(id))
+            assertThat(hit.score, equalTo(score))
+        }
+    }
+
+    private fun searchWithSort(): SearchResponse {
+        return client().search(
                 searchRequest()
                         .source(
                                 searchSource()
-                                        .query(functionScoreQuery(
-                                                fieldValueFactorFunction("ext_price")
-                                                        .missing(0.0)))
+                                        .sort("ext_price", SortOrder.DESC)
                                         .explain(false)))
                 .actionGet()
-        assertNoFailures(response)
+                .also(::assertNoFailures)
+    }
+
+    private fun assertHitsWithSort(response: SearchResponse, sorts: List<Pair<String, Array<Double>>>) {
         val hits = response.hits
-        assertThat(hits.hits.size, equalTo(4))
-        assertThat(hits.getAt(0).id, equalTo("3"))
-        assertThat(hits.getAt(0).score, equalTo(1.3f))
-        assertThat(hits.getAt(1).id, equalTo("2"))
-        assertThat(hits.getAt(1).score, equalTo(1.2f))
-        assertThat(hits.getAt(2).id, equalTo("1"))
-        assertThat(hits.getAt(2).score, equalTo(1.1f))
-        assertThat(hits.getAt(3).id, equalTo("4"))
-        assertThat(hits.getAt(3).score, equalTo(0.0f))
+        assertThat(hits.hits.size, equalTo(sorts.size))
+        sorts.forEachIndexed { ix, (id, sortValues) ->
+            val hit = hits.getAt(ix)
+            assertThat(hit.id, equalTo(id))
+            assertThat(hit.sortValues.size, equalTo(sortValues.size))
+            sortValues.zip(hit.sortValues).forEach { (expected, value) ->
+                if (value is Double) {
+                    Assert.assertEquals(value, expected, 1e-6)
+                } else {
+                    throw AssertionError(
+                            "Expected ${Double::class.java} but was ${value::class.java}: $value"
+                    )
+                }
+            }
+        }
     }
 }

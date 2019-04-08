@@ -101,8 +101,6 @@ class ExternalFileFieldMapper(
                 node: MutableMap<String, Any?>,
                 parserContext: Mapper.TypeParser.ParserContext): Mapper.Builder<*,*>
         {
-            println(">>> $name")
-            println(node)
             val builder = Builder(name)
             val entries = node.entries.iterator()
             for ((key, value) in entries) {

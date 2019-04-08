@@ -122,25 +122,25 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
     }
 
     // TODO find a way to check existing of the key_field when parsing mapping
-    fun testNonexistentIdKeyField() {
-        val mapping = jsonBuilder().obj {
-            obj("type") {
-                obj("properties") {
-                    obj("ext_field") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "test_ext_file")
-                    }
-                }
-            }
-        }
-        try {
-            parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
-            fail("Expected a mapper parsing exception")
-        } catch (e: MapperParsingException) {
-            assertThat(e.message, containsString("[id] field not found"))
-        }
-    }
+    // fun testNonexistentIdKeyField() {
+    //     val mapping = jsonBuilder().obj {
+    //         obj("type") {
+    //             obj("properties") {
+    //                 obj("ext_field") {
+    //                     field("type", "external_file")
+    //                     field("key_field", "id")
+    //                     field("map_name", "test_ext_file")
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     try {
+    //         parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
+    //         fail("Expected a mapper parsing exception")
+    //     } catch (e: MapperParsingException) {
+    //         assertThat(e.message, containsString("[id] field not found"))
+    //     }
+    // }
 
     fun testDocValuesNotAllowed() {
         val mapping = jsonBuilder().obj {
