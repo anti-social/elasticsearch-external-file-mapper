@@ -20,23 +20,25 @@ import java.util.Arrays
 
 import org.elasticsearch.common.bytes.BytesReference
 import org.elasticsearch.common.compress.CompressedXContent
+import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder
 import org.elasticsearch.common.xcontent.XContentType
 import org.elasticsearch.index.IndexService
 import org.elasticsearch.index.mapper.DocumentMapperParser
+import org.elasticsearch.index.mapper.MapperParsingException
 import org.elasticsearch.index.mapper.SourceToParse
 import org.elasticsearch.plugins.Plugin
 import org.elasticsearch.test.ESSingleNodeTestCase
 import org.elasticsearch.test.InternalSettingsPlugin
 
+import org.hamcrest.Matchers.containsString
+
 import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
 import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
-import company.evo.persistent.hashmap.simple.SimpleHashMapEnv_Int_Float
-import org.elasticsearch.common.xcontent.XContentBuilder
-import org.elasticsearch.index.mapper.MapperParsingException
-import org.hamcrest.Matchers.containsString
+import company.evo.persistent.hashmap.straight.StraightHashMapEnv
+import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 
 import java.nio.file.Files
 
@@ -61,7 +63,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
     }
 
     private fun initMap(name: String, entries: Map<Int, Float>) {
-        SimpleHashMapEnv_Int_Float.Builder()
+        StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
                 .useUnmapHack(true)
                 .open(
                         ExternalFileService.instance.getExternalFileDir(name)

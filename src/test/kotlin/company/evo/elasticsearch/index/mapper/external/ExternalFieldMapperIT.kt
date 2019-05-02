@@ -40,7 +40,8 @@ import org.junit.Before
 
 import company.evo.elasticsearch.indices.ExternalFileService
 import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
-import company.evo.persistent.hashmap.simple.SimpleHashMapEnv_Int_Float
+import company.evo.persistent.hashmap.straight.StraightHashMapEnv
+import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 
 
 @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.TEST, numDataNodes=0)
@@ -72,7 +73,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
     }
 
     private fun initMap(name: String, entries: Map<Int, Float>? = null) {
-        SimpleHashMapEnv_Int_Float.Builder()
+        StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
                 .useUnmapHack(true)
                 .open(
                         extFileService.getExternalFileDir(name)

@@ -1,7 +1,8 @@
 package company.evo.elasticsearch.indices
 
-import company.evo.persistent.hashmap.simple.SimpleHashMapROEnv_Int_Float
-import company.evo.persistent.hashmap.simple.SimpleHashMapRO_Int_Float
+import company.evo.persistent.hashmap.straight.StraightHashMapROEnv
+import company.evo.persistent.hashmap.straight.StraightHashMapRO_Int_Float
+import company.evo.persistent.hashmap.straight.StraightHashMap_Int_Float
 
 interface FileValues {
     interface Provider : AutoCloseable {
@@ -23,10 +24,12 @@ class EmptyFileValues : FileValues {
 }
 
 class IntDoubleFileValues(
-        private val map: SimpleHashMapRO_Int_Float
+        private val map: StraightHashMapRO_Int_Float
 ) : FileValues {
 
-    class Provider(private val mapEnv: SimpleHashMapROEnv_Int_Float) : FileValues.Provider {
+    class Provider(
+            private val mapEnv: StraightHashMapROEnv<Int, Float, StraightHashMap_Int_Float, StraightHashMapRO_Int_Float>
+    ) : FileValues.Provider {
         override val sizeBytes: Long
             get() = TODO("not implemented")
 

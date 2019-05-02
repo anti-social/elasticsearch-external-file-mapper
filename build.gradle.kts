@@ -64,6 +64,9 @@ project.version = "$appVersion-es${versions["elasticsearch"]}"
 
 repositories {
     mavenCentral()
+    maven {
+        url = uri("https://dl.bintray.com/evo/maven")
+    }
 }
 
 dependencies {

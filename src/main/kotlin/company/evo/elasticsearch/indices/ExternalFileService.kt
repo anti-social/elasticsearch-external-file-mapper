@@ -19,7 +19,8 @@ package company.evo.elasticsearch.indices
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
-import company.evo.persistent.hashmap.simple.SimpleHashMapEnv_Int_Float
+import company.evo.persistent.hashmap.straight.StraightHashMapEnv
+import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.inject.Inject
@@ -60,7 +61,7 @@ class ExternalFileService @Inject internal constructor(
         logger.debug("Adding external file field: [$indexName] [$fieldName]")
         val extDir = getExternalFileDir(mapName)
 
-        val mapEnv = SimpleHashMapEnv_Int_Float.Builder()
+        val mapEnv = StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
                 .useUnmapHack(true)
                 .openReadOnly(extDir)
         mapFiles.putIfAbsent(mapName, IntDoubleFileValues.Provider(mapEnv))
