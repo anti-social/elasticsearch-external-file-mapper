@@ -6,7 +6,7 @@ import org.elasticsearch.gradle.VersionProperties
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 buildscript {
-    val defaultEsVersion = "6.5.4"
+    val defaultEsVersion = "6.7.1"
     val esVersion = if (hasProperty("esVersion")) {
         property("esVersion")
     } else {
@@ -43,10 +43,9 @@ configure<org.elasticsearch.gradle.plugin.PluginPropertiesExtension> {
     name = "mapper-external-file"
     description = "External file field mapper for ElasticSearch"
     classname = "company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin"
+    licenseFile = rootProject.file("LICENSE.txt")
+    noticeFile = rootProject.file("NOTICE.txt")
 }
-
-project.setProperty("licenseFile", project.file("LICENSE.txt"))
-project.setProperty("noticeFile", project.file("NOTICE.txt"))
 
 val appVersion =  project.file("project.version")
         .readLines()
@@ -86,11 +85,6 @@ tasks.withType(KotlinCompile::class.java).all {
 tasks.withType(RandomizedTestingTask::class.java).all {
     testClassesDirs = files(File(buildDir, "classes/kotlin/test"))
 }
-
-val testFunc by tasks.creating(Test::class) {
-    include("**/*TestCase.class")
-}
-testFunc.outputs.upToDateWhen { false }
 
 bintray {
     user = if (hasProperty("bintrayUser")) {

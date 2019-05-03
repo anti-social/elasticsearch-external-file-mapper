@@ -22,17 +22,19 @@ import java.util.concurrent.ConcurrentHashMap
 import company.evo.persistent.hashmap.straight.StraightHashMapEnv
 import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 
+import org.apache.logging.log4j.LogManager
+
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.env.NodeEnvironment
 
 class ExternalFileService @Inject internal constructor(
-        settings: Settings,
         nodeEnv: NodeEnvironment
-) : AbstractLifecycleComponent(settings) {
+) : AbstractLifecycleComponent() {
 
-    private val nodeDir: Path = nodeEnv.nodeDataPaths()[0]
+    private val logger = LogManager.getLogger(this::javaClass)
+    private val nodeDir = nodeEnv.nodeDataPaths()[0]
     private val mapFiles = ConcurrentHashMap<String, FileValues.Provider>()
 
     companion object {
