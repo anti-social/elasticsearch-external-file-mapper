@@ -1,0 +1,3 @@
+[submodule "persistent-hashmap"]
+	path = persistent-hashmap
+	url = https://github.com/anti-social/persistent-hashmap.git
