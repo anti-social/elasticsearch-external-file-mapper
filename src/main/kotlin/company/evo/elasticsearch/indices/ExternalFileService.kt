@@ -26,7 +26,6 @@ import org.apache.logging.log4j.LogManager
 
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.inject.Inject
-import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.env.NodeEnvironment
 
 class ExternalFileService @Inject internal constructor(
@@ -34,7 +33,7 @@ class ExternalFileService @Inject internal constructor(
 ) : AbstractLifecycleComponent() {
 
     private val logger = LogManager.getLogger(this::javaClass)
-    private val nodeDir = nodeEnv.nodeDataPaths()[0]
+    private val externalDataDir = nodeEnv.sharedDataPath().resolve(EXTERNAL_DIR_NAME)
     private val mapFiles = ConcurrentHashMap<String, FileValues.Provider>()
 
     companion object {
@@ -74,8 +73,6 @@ class ExternalFileService @Inject internal constructor(
     }
 
     fun getExternalFileDir(name: String): Path {
-        return nodeDir
-                .resolve(EXTERNAL_DIR_NAME)
-                .resolve(name)
+        return externalDataDir.resolve(name)
     }
 }
