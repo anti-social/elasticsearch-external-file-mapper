@@ -6,7 +6,7 @@ import org.elasticsearch.gradle.VersionProperties
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 buildscript {
-    val defaultEsVersion = "6.7.1"
+    val defaultEsVersion = "6.7.2"
     val esVersion = if (hasProperty("esVersion")) {
         property("esVersion")
     } else {
