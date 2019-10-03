@@ -21,17 +21,19 @@ before_script:
 
 script:
 - |
-  if [[ $TRAVIS_TAG == v* ]]; then
-    ASSEMBLE_ARGS="-Prelease=true"
+  GRADLE_ARGS="--info --stacktrace --no-daemon"
+  if [[ $TRAVIS_TAG == v*-es* ]]; then
+    ES_VERSION=$(echo $TRAVIS_TAG | sed 's/v.*-es\(.*\)/\1/')
+    GRADLE_ARGS="$GRADLE_ARGS -Prelease=true -PesVersion=$ES_VERSION"
   fi
-  vagga assemble --no-daemon $ASSEMBLE_ARGS
-- vagga test
+  vagga assemble $GRADLE_ARGS
+- vagga test $GRADLE_ARGS
 
 after_success:
 - |
   echo $TRAVIS_TAG
-  if [[ $TRAVIS_TAG == v* ]]; then
-    vagga -e BINTRAY_USER -e BINTRAY_API_KEY gradle bintrayUpload -Prelease=true --info --no-daemon
+  if [[ $TRAVIS_TAG == v*-es* ]]; then
+    vagga -e BINTRAY_USER -e BINTRAY_API_KEY gradle bintrayUpload $GRADLE_ARGS
   fi
 
 cache:
