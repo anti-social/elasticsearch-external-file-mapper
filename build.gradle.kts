@@ -25,7 +25,7 @@ buildscript {
 plugins {
     idea
     java
-    kotlin("jvm") version "1.3.21"
+    kotlin("jvm") version "1.3.50"
     id("com.jfrog.bintray") version "1.7.3"
 }
 
