@@ -1,7 +1,7 @@
 import java.util.Date
 import com.carrotsearch.gradle.junit4.RandomizedTestingTask
 import com.jfrog.bintray.gradle.BintrayExtension
-import com.jfrog.bintray.gradle.RecordingCopyTask
+import com.jfrog.bintray.gradle.tasks.RecordingCopyTask
 import org.elasticsearch.gradle.VersionProperties
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
@@ -26,7 +26,7 @@ plugins {
     idea
     java
     kotlin("jvm") version "1.3.50"
-    id("com.jfrog.bintray") version "1.7.3"
+    id("com.jfrog.bintray") version "1.8.4"
 }
 
 apply {
