@@ -19,9 +19,6 @@ package company.evo.elasticsearch.indices
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
-import company.evo.persistent.hashmap.straight.StraightHashMapEnv
-import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
-
 import org.apache.logging.log4j.LogManager
 
 import org.elasticsearch.common.component.AbstractLifecycleComponent
@@ -38,7 +35,6 @@ class ExternalFileService @Inject internal constructor(
 
     companion object {
         const val EXTERNAL_DIR_NAME = "external_files"
-        val EMPTY_FILE_VALUES: FileValues = EmptyFileValues()
         lateinit var instance: ExternalFileService
     }
 
@@ -61,15 +57,11 @@ class ExternalFileService @Inject internal constructor(
     fun addFile(indexName: String, fieldName: String, mapName: String) {
         logger.debug("Adding external file field: [$indexName] [$fieldName]")
         val extDir = getExternalFileDir(mapName)
-
-        val mapEnv = StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
-                .useUnmapHack(true)
-                .openReadOnly(extDir)
-        mapFiles.putIfAbsent(mapName, IntDoubleFileValues.Provider(mapEnv))
+        mapFiles.putIfAbsent(mapName, IntDoubleFileValues.Provider(extDir))
     }
 
     fun getValues(mapName: String): FileValues {
-        return mapFiles[mapName]?.get() ?: EMPTY_FILE_VALUES
+        return mapFiles[mapName]?.getValues() ?: EmptyFileValues
     }
 
     fun getExternalFileDir(name: String): Path {

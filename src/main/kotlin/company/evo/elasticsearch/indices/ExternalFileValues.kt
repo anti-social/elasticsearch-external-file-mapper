@@ -1,19 +1,24 @@
 package company.evo.elasticsearch.indices
 
+import company.evo.persistent.hashmap.straight.StraightHashMapEnv
 import company.evo.persistent.hashmap.straight.StraightHashMapROEnv
-import company.evo.persistent.hashmap.straight.StraightHashMapRO_Int_Float
 import company.evo.persistent.hashmap.straight.StraightHashMap_Int_Float
+import company.evo.persistent.hashmap.straight.StraightHashMapRO_Int_Float
+import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
+
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicReference
 
 interface FileValues {
     interface Provider : AutoCloseable {
         val sizeBytes: Long
-        fun get(): FileValues
+        fun getValues(): FileValues
     }
     fun get(key: Long, defaultValue: Double): Double
     fun contains(key: Long): Boolean
 }
 
-class EmptyFileValues : FileValues {
+object EmptyFileValues : FileValues {
     override fun get(key: Long, defaultValue: Double): Double {
         return defaultValue
     }
@@ -23,22 +28,40 @@ class EmptyFileValues : FileValues {
     }
 }
 
+typealias StraightHashMapROEnv_Int_Float = StraightHashMapROEnv<
+        Int, Float, StraightHashMap_Int_Float, StraightHashMapRO_Int_Float>
+
 class IntDoubleFileValues(
         private val map: StraightHashMapRO_Int_Float
 ) : FileValues {
 
-    class Provider(
-            private val mapEnv: StraightHashMapROEnv<Int, Float, StraightHashMap_Int_Float, StraightHashMapRO_Int_Float>
-    ) : FileValues.Provider {
+    class Provider(private val dir: Path) : FileValues.Provider {
+        private val mapEnv: AtomicReference<StraightHashMapROEnv_Int_Float?> = AtomicReference(null)
+
         override val sizeBytes: Long
             get() = TODO("not implemented")
 
-        override fun get(): FileValues {
-            return IntDoubleFileValues(mapEnv.getCurrentMap())
+        override fun getValues(): FileValues {
+            var env = mapEnv.get()
+            if (env == null) {
+                try {
+                    val newEnv = StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
+                            .useUnmapHack(true)
+                            .openReadOnly(dir)
+                    if (!mapEnv.compareAndSet(null, newEnv)) {
+                        // Another thread already have set an environment
+                        newEnv.close()
+                    }
+                    env = mapEnv.get()!!
+                } catch (e: company.evo.persistent.FileDoesNotExistException) {
+                    return EmptyFileValues
+                }
+            }
+            return IntDoubleFileValues(env.getCurrentMap())
         }
 
         override fun close() {
-            mapEnv.close()
+            mapEnv.get()?.close()
         }
     }
 

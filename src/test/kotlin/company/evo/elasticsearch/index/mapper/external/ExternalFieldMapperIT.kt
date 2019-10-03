@@ -286,6 +286,40 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         assertHits(search(), listOf("4" to 0.0F, "1" to -1.1F, "2" to -1.2F, "3" to -1.3F))
     }
 
+    fun testPickUpExternalFileOnTheFly() {
+        val indexName = "test"
+        val mapping = jsonBuilder().obj {
+            obj("product") {
+                obj("properties") {
+                    obj("id") {
+                        field("type", "integer")
+                    }
+                    obj("name") {
+                        field("type", "text")
+                    }
+                    obj("ext_price") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "ext_price")
+                    }
+                }
+            }
+        }
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .addMapping("product", mapping)
+                .get()
+
+        indexTestDocuments(indexName)
+
+        assertHits(search(), listOf("2" to 0.0F, "4" to 0.0F, "1" to 0.0F, "3" to 0.0F))
+
+        initMap("ext_price", mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+
+        assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
+    }
+
     private fun indexTestDocuments(indexName: String) {
         client().prepareIndex(indexName, "product", "1")
                 .setSource(
