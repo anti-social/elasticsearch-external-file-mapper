@@ -19,18 +19,18 @@ package company.evo.elasticsearch.indices
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
-import org.apache.logging.log4j.LogManager
-
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.inject.Inject
+import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.env.NodeEnvironment
 
 class ExternalFileService @Inject internal constructor(
+        settings: Settings,
         nodeEnv: NodeEnvironment
-) : AbstractLifecycleComponent() {
+) : AbstractLifecycleComponent(settings) {
 
-    private val logger = LogManager.getLogger(this::javaClass)
-    private val externalDataDir = nodeEnv.sharedDataPath().resolve(EXTERNAL_DIR_NAME)
+//    private val logger = LogManager.getLogger(this::javaClass)
+    private val externalDataDir = nodeEnv.nodeDataPaths()[0].resolve(EXTERNAL_DIR_NAME)
     private val mapFiles = ConcurrentHashMap<String, FileValues.Provider>()
 
     companion object {

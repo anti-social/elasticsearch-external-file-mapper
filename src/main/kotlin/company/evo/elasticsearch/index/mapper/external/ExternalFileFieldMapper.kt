@@ -219,14 +219,14 @@ class ExternalFileFieldMapper(
             )
         }
 
-        override fun existsQuery(context: QueryShardContext?): Query {
-            throw QueryShardException(
-                    context,
-                    "ExternalField field type does not support exists queries"
-            )
-        }
+//        override fun existsQuery(context: QueryShardContext?): Query {
+//            throw QueryShardException(
+//                    context,
+//                    "ExternalField field type does not support exists queries"
+//            )
+//        }
 
-        override fun fielddataBuilder(fullyQualifiedIndexName: String): IndexFieldData.Builder {
+        override fun fielddataBuilder(): IndexFieldData.Builder {
             return IndexFieldData.Builder {
                 indexSettings, _, cache, breakerService, mapperService ->
 
@@ -234,7 +234,7 @@ class ExternalFileFieldMapper(
                         keyFieldName ?: throw IllegalStateException("[keyFieldName is mandatory")
                 ) ?: throw IllegalStateException("[$keyFieldName] field is missing")
                 val keyFieldData = keyFieldType
-                        .fielddataBuilder(fullyQualifiedIndexName)
+                        .fielddataBuilder()
                         .build(
                                 indexSettings, keyFieldType, cache, breakerService, mapperService
                         ) as? IndexNumericFieldData
@@ -271,24 +271,26 @@ class ExternalFileFieldMapper(
             ) : SortedNumericDoubleValues() {
 
                 private var value = DEFAULT_VALUE
+                private var count = 0
 
-                override fun advanceExact(target: Int): Boolean {
-                    return if (keys.advanceExact(target)) {
-                        val key = keys.nextValue()
+                override fun setDocument(target: Int) {
+                    keys.setDocument(target)
+                    if (keys.count() > 0) {
+                        val key = keys.valueAt(0)
                         if (values.contains(key)) {
+                            count = 1
                             value = values.get(key, DEFAULT_VALUE)
-                            true
-                        } else {
-                            false
+                            return
                         }
-                    } else {
-                        false
                     }
+
+                    count = 0
+                    value = DEFAULT_VALUE
                 }
 
-                override fun nextValue() = value
+                override fun valueAt(index: Int): Double = value
 
-                override fun docValueCount() = 1
+                override fun count(): Int = count
             }
 
             override fun getDoubleValues(): SortedNumericDoubleValues {

@@ -101,17 +101,15 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 }
             }
         }
-        val mapper = parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
+        val mapper = parser.parse("type", CompressedXContent(mapping.string()))
 
         val parsedDoc = mapper.parse(
                 SourceToParse.source(
                         "test", "type", "1",
-                        BytesReference.bytes(
-                                jsonBuilder().obj {
-                                    field("id", 1)
-                                    field("ext_field", "value")
-                                }
-                        ),
+                        jsonBuilder().obj {
+                            field("id", 1)
+                            field("ext_field", "value")
+                        }.bytes(),
                         XContentType.JSON
                 )
         )
@@ -158,7 +156,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
             }
         }
         try {
-            parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
+            parser.parse("type", CompressedXContent(mapping.string()))
             fail("Expected a mapper parsing exception")
         } catch (e: MapperParsingException) {
             assertThat(
@@ -182,7 +180,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
             }
         }
         try {
-            parser.parse("type", CompressedXContent(BytesReference.bytes(mapping)))
+            parser.parse("type", CompressedXContent(mapping.string()))
             fail("Expected a mapper parsing exception")
         } catch (e: MapperParsingException) {
             assertThat(

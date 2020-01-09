@@ -214,7 +214,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
             }
         }
         client().admin().indices().preparePutTemplate("test_template")
-                .setPatterns(listOf("test_*"))
+                .setTemplate("test_*")
                 .setSettings(indexSettings())
                 .setOrder(0)
                 .addMapping("product", mapping)

@@ -6,7 +6,7 @@ import org.elasticsearch.gradle.VersionProperties
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 buildscript {
-    val defaultEsVersion = "6.7.2"
+    val defaultEsVersion = "5.5.3"
     val esVersion = if (hasProperty("esVersion")) {
         property("esVersion")
     } else {
@@ -43,8 +43,13 @@ configure<org.elasticsearch.gradle.plugin.PluginPropertiesExtension> {
     name = "mapper-external-file"
     description = "External file field mapper for ElasticSearch"
     classname = "company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin"
-    licenseFile = rootProject.file("LICENSE.txt")
-    noticeFile = rootProject.file("NOTICE.txt")
+
+    licenseFile = project.file("LICENSE.txt").also {
+        project.extra["licenseFile"] = it
+    }
+    noticeFile = project.file("NOTICE.txt").also {
+        project.extra["noticeFile"] = it
+    }
 }
 
 val appVersion =  project.file("project.version")
@@ -82,8 +87,14 @@ tasks.withType(KotlinCompile::class.java).all {
 }
 
 // Have no idea how to fix this better, the fix needed from kotlin plugin >= 1.1.4
+val kotlinTestClassesDir = File(buildDir, "classes/kotlin/test")
+sourceSets["test"].allJava.outputDir = kotlinTestClassesDir
+
+val compileTestKotlin by tasks
+
 tasks.withType(RandomizedTestingTask::class.java).all {
-    testClassesDirs = files(File(buildDir, "classes/kotlin/test"))
+    testClassesDir = kotlinTestClassesDir
+    dependsOn(compileTestKotlin)
 }
 
 bintray {
