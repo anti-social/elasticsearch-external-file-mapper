@@ -24,8 +24,8 @@ containers:
     - !Sh update-ca-certificates
     - !EnsureDir /opt/gradle
     - !Unzip
-      url: https://services.gradle.org/distributions/gradle-5.2.1-bin.zip
-      subdir: gradle-5.2.1
+      url: https://services.gradle.org/distributions/gradle-4.10.2-bin.zip
+      subdir: gradle-4.10.2
       path: /opt/gradle
     - !Sh ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle
 
@@ -36,14 +36,14 @@ containers:
       - ca-certificates
       - openjdk-11-jdk-headless
     - !UbuntuRepo
-      url: https://artifacts.elastic.co/packages/6.x/apt
+      url: https://artifacts.elastic.co/packages/5.x/apt
       trusted: true
       suite: stable
       components: [main]
     - !Env
       ES_SKIP_SET_KERNEL_PARAMETERS: true
     - !Install
-      - elasticsearch=6.7.1
+      - elasticsearch=5.5.3
     - !EnsureDir /var/lib/elasticsearch
     - !EnsureDir /var/log/elasticsearch
     volumes:
@@ -100,7 +100,7 @@ commands:
   test-integ: !Command
     <<: *cmd-opts
     description: Runs integration tests
-    run: [gradle, integTest, -Dtests.class=*.ExternalFieldMapperIT]
+    run: [gradle, integTest]
 
   clean: !Command
     <<: *cmd-opts

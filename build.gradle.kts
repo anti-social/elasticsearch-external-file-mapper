@@ -93,6 +93,7 @@ sourceSets["test"].allJava.outputDir = kotlinTestClassesDir
 val compileTestKotlin by tasks
 
 tasks.withType(RandomizedTestingTask::class.java).all {
+    systemProperty("tests.security.manager", "false")
     testClassesDir = kotlinTestClassesDir
     dependsOn(compileTestKotlin)
 }
