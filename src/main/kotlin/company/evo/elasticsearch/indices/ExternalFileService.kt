@@ -22,15 +22,14 @@ import java.util.concurrent.ConcurrentHashMap
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.settings.Settings
-import org.elasticsearch.env.NodeEnvironment
+import org.elasticsearch.env.Environment
 
 class ExternalFileService @Inject internal constructor(
         settings: Settings,
-        nodeEnv: NodeEnvironment
+        env: Environment
 ) : AbstractLifecycleComponent(settings) {
 
-//    private val logger = LogManager.getLogger(this::javaClass)
-    private val externalDataDir = nodeEnv.nodeDataPaths()[0].resolve(EXTERNAL_DIR_NAME)
+    private val externalDataDir = env.sharedDataFile().resolve(EXTERNAL_DIR_NAME)
     private val mapFiles = ConcurrentHashMap<String, FileValues.Provider>()
 
     companion object {
