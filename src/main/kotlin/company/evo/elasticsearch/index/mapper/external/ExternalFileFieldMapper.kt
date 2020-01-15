@@ -219,13 +219,6 @@ class ExternalFileFieldMapper(
             )
         }
 
-//        override fun existsQuery(context: QueryShardContext?): Query {
-//            throw QueryShardException(
-//                    context,
-//                    "ExternalField field type does not support exists queries"
-//            )
-//        }
-
         override fun fielddataBuilder(): IndexFieldData.Builder {
             return IndexFieldData.Builder {
                 indexSettings, _, cache, breakerService, mapperService ->
@@ -257,7 +250,7 @@ class ExternalFileFieldMapper(
     ) : IndexNumericFieldData {
 
         companion object {
-            private const val DEFAULT_VALUE = 0.0
+            private val DEFAULT_VALUE = Double.NaN
         }
 
         class AtomicNumericKeyFieldData(
@@ -277,9 +270,10 @@ class ExternalFileFieldMapper(
                     keys.setDocument(target)
                     if (keys.count() > 0) {
                         val key = keys.valueAt(0)
-                        if (values.contains(key)) {
+                        val v = values.get(key, DEFAULT_VALUE)
+                        if (!v.isNaN()) {
                             count = 1
-                            value = values.get(key, DEFAULT_VALUE)
+                            value = v
                             return
                         }
                     }
