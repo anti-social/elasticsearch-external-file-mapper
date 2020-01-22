@@ -1,5 +1,7 @@
 package company.evo.elasticsearch.indices
 
+import company.evo.persistent.hashmap.Hasher_Int
+import company.evo.persistent.hashmap.HasherProvider_Int
 import company.evo.persistent.hashmap.straight.StraightHashMapEnv
 import company.evo.persistent.hashmap.straight.StraightHashMapROEnv
 import company.evo.persistent.hashmap.straight.StraightHashMap_Int_Float
@@ -29,7 +31,11 @@ object EmptyFileValues : FileValues {
 }
 
 typealias StraightHashMapROEnv_Int_Float = StraightHashMapROEnv<
-        Int, Float, StraightHashMap_Int_Float, StraightHashMapRO_Int_Float>
+        HasherProvider_Int,
+        Hasher_Int,
+        StraightHashMap_Int_Float,
+        StraightHashMapRO_Int_Float
+>
 
 class IntDoubleFileValues(
         private val map: StraightHashMapRO_Int_Float
