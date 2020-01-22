@@ -257,7 +257,7 @@ class ExternalFileFieldMapper(
     ) : IndexNumericFieldData {
 
         companion object {
-            private const val DEFAULT_VALUE = 0.0
+            private val DEFAULT_VALUE = Double.NaN
         }
 
         class AtomicNumericKeyFieldData(
@@ -275,8 +275,9 @@ class ExternalFileFieldMapper(
                 override fun advanceExact(target: Int): Boolean {
                     return if (keys.advanceExact(target)) {
                         val key = keys.nextValue()
-                        if (values.contains(key)) {
-                            value = values.get(key, DEFAULT_VALUE)
+                        val v = values.get(key, DEFAULT_VALUE)
+                        if (!v.isNaN()) {
+                            value = v
                             true
                         } else {
                             false
