@@ -13,10 +13,6 @@ buildscript {
         defaultEsVersion
     }
 
-    repositories {
-        mavenCentral()
-        jcenter()
-    }
     dependencies {
         classpath("org.elasticsearch.gradle:build-tools:$esVersion")
     }
@@ -84,6 +80,16 @@ tasks.withType(KotlinCompile::class.java).all {
 // Have no idea how to fix this better, the fix needed from kotlin plugin >= 1.1.4
 tasks.withType(RandomizedTestingTask::class.java).all {
     testClassesDirs = files(File(buildDir, "classes/kotlin/test"))
+  }
+
+tasks.register("listRepos") {
+    doLast {
+        println("Repositories:")
+        project.repositories.map{ it as MavenArtifactRepository }
+            .forEach{
+            println("Name: ${it.name}; url: ${it.url}")
+        }
+    }
 }
 
 bintray {

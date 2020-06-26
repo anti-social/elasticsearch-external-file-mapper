@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicReference
 interface FileValues {
     interface Provider : AutoCloseable {
         val sizeBytes: Long
-        fun getValues(): FileValues
+        fun getValues(shardId: Int?): FileValues
     }
     fun get(key: Long, defaultValue: Double): Double
     fun contains(key: Long): Boolean
@@ -41,19 +41,27 @@ class IntDoubleFileValues(
         private val map: StraightHashMapRO_Int_Float
 ) : FileValues {
 
-    class Provider(private val dir: Path) : FileValues.Provider {
-        private val mapEnv: AtomicReference<StraightHashMapROEnv_Int_Float?> = AtomicReference(null)
+    class Provider(private val dir: Path, numShards: Int) : FileValues.Provider {
+        private val mapEnvs: Array<AtomicReference<StraightHashMapROEnv_Int_Float?>> = Array(numShards) {
+            AtomicReference<StraightHashMapROEnv_Int_Float?>(null)
+        }
 
         override val sizeBytes: Long
             get() = TODO("not implemented")
 
-        override fun getValues(): FileValues {
+        override fun getValues(shardId: Int?): FileValues {
+            val mapDir = if (shardId != null) {
+                dir.resolve(shardId.toString())
+            } else {
+                dir
+            }
+            val mapEnv = mapEnvs[shardId ?: 0]
             var env = mapEnv.get()
             if (env == null) {
                 try {
                     val newEnv = StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
                             .useUnmapHack(true)
-                            .openReadOnly(dir)
+                            .openReadOnly(mapDir)
                     if (!mapEnv.compareAndSet(null, newEnv)) {
                         // Another thread already have set an environment
                         newEnv.close()
@@ -67,7 +75,9 @@ class IntDoubleFileValues(
         }
 
         override fun close() {
-            mapEnv.get()?.close()
+            mapEnvs.forEach { env ->
+                env.get()?.close()
+            }
         }
     }
 

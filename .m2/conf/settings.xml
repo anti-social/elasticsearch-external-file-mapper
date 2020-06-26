@@ -1,0 +1,3 @@
+<settings>
+    <localRepository>../elasticsearch/build/local-test-repo</localRepository>
+</settings>

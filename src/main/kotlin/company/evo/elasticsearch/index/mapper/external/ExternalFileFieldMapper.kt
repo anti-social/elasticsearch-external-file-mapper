@@ -91,7 +91,7 @@ class ExternalFileFieldMapper(
             builder.field("key_field", fieldType().keyFieldName)
         }
         if (includeDefaults || fieldType().keyFieldName != null) {
-            builder.field("scaling_factor", fieldType().scalingFactor)
+            builder.field("sharding", fieldType().sharding)
         }
     }
 
@@ -114,8 +114,15 @@ class ExternalFileFieldMapper(
                         builder.mapName = value?.toString()
                         entries.remove()
                     }
+                    "sharding" -> {
+                        val sharding = value?.toString()?.toBoolean()
+                        if (sharding != null) {
+                            builder.sharding = sharding
+                        }
+                        entries.remove()
+                    }
                     "scaling_factor" -> {
-                        builder.scalingFactor = value?.toString()?.toLong()
+                        // Deprecated option: ignore it
                         entries.remove()
                     }
                     else -> {
@@ -146,29 +153,30 @@ class ExternalFileFieldMapper(
     ) {
         var mapName: String? = null
         var keyFieldName: String? = null
-        var scalingFactor: Long? = null
+        var sharding: Boolean = false
 
         override fun fieldType(): ExternalFileFieldType {
             return fieldType as ExternalFileFieldType
         }
 
         override fun build(context: BuilderContext): ExternalFileFieldMapper {
-            val indexName = context.indexSettings()
-                    .get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
-            val indexUuid = context.indexSettings()
-                    .get(IndexMetaData.SETTING_INDEX_UUID)
+            val indexSettings = context.indexSettings()
+            val indexName = indexSettings.get(IndexMetaData.SETTING_INDEX_PROVIDED_NAME)
+            val indexUuid = indexSettings.get(IndexMetaData.SETTING_INDEX_UUID)
+            val numShards = indexSettings.get(IndexMetaData.SETTING_NUMBER_OF_SHARDS).toInt()
             // There is no index when putting template
             if (indexName != null && indexUuid != null) {
                 ExternalFileService.instance.addFile(
                         indexName,
                         name,
-                        mapName ?: throw IllegalStateException("mapName property must be set")
+                        mapName ?: throw IllegalStateException("mapName property must be set"),
+                        if (sharding) numShards else 1
                 )
             }
             setupFieldType(context)
             fieldType().mapName = mapName
             fieldType().keyFieldName = keyFieldName
-            fieldType().scalingFactor = scalingFactor
+            fieldType().sharding = sharding
             return ExternalFileFieldMapper(
                     name, fieldType, defaultFieldType, context.indexSettings(),
                     multiFieldsBuilder.build(this, context), copyTo)
@@ -178,14 +186,14 @@ class ExternalFileFieldMapper(
     class ExternalFileFieldType : MappedFieldType {
         var mapName: String? = null
         var keyFieldName: String? = null
-        var scalingFactor: Long? = null
+        var sharding: Boolean = false
 
         constructor()
 
         private constructor(ref: ExternalFileFieldType) : super(ref) {
             this.mapName = ref.mapName
             this.keyFieldName = ref.keyFieldName
-            this.scalingFactor = ref.scalingFactor
+            this.sharding = ref.sharding
         }
 
         override fun clone(): ExternalFileFieldType {
@@ -199,13 +207,13 @@ class ExternalFileFieldMapper(
             if (other is ExternalFileFieldType) {
                 return other.mapName == mapName &&
                         other.keyFieldName == keyFieldName &&
-                        other.scalingFactor == scalingFactor
+                        other.sharding == sharding
             }
             return false
         }
 
         override fun hashCode(): Int {
-            return Objects.hash(super.hashCode(), mapName, keyFieldName, scalingFactor)
+            return Objects.hash(super.hashCode(), mapName, keyFieldName, sharding)
         }
 
         override fun typeName(): String {
@@ -213,6 +221,7 @@ class ExternalFileFieldMapper(
         }
 
         override fun termQuery(value: Any, context: QueryShardContext): Query {
+            println("> termQuery: ${context.shardId}")
             throw QueryShardException(
                     context,
                     "ExternalFile field type does not support search queries"
@@ -226,7 +235,7 @@ class ExternalFileFieldMapper(
             )
         }
 
-        override fun fielddataBuilder(fullyQualifiedIndexName: String): IndexFieldData.Builder {
+        override fun fielddataBuilder(fullyQualifiedIndexName: String, shardId: Int): IndexFieldData.Builder {
             return IndexFieldData.Builder {
                 indexSettings, _, cache, breakerService, mapperService ->
 
@@ -234,13 +243,14 @@ class ExternalFileFieldMapper(
                         keyFieldName ?: throw IllegalStateException("[keyFieldName is mandatory")
                 ) ?: throw IllegalStateException("[$keyFieldName] field is missing")
                 val keyFieldData = keyFieldType
-                        .fielddataBuilder(fullyQualifiedIndexName)
+                        .fielddataBuilder(fullyQualifiedIndexName, shardId)
                         .build(
                                 indexSettings, keyFieldType, cache, breakerService, mapperService
                         ) as? IndexNumericFieldData
                         ?: throw IllegalStateException("[$keyFieldName] field must be numeric")
                 val values = ExternalFileService.instance.getValues(
-                        mapName ?: throw IllegalStateException("[mapName] is mandatory")
+                        mapName ?: throw IllegalStateException("[mapName] is mandatory"),
+                        shardId
                 )
                 ExternalFileFieldData(
                         name(), indexSettings.index, keyFieldData, values
@@ -338,8 +348,8 @@ class ExternalFileFieldMapper(
 
         override fun sortField(
                 missingValue: Any?, sortMode: MultiValueMode,
-                nested: IndexFieldData.XFieldComparatorSource.Nested?, reverse: Boolean): SortField
-        {
+                nested: IndexFieldData.XFieldComparatorSource.Nested?, reverse: Boolean
+        ): SortField {
             val source = DoubleValuesComparatorSource(this, missingValue, sortMode, nested)
             return SortField(fieldName, source, reverse)
         }
