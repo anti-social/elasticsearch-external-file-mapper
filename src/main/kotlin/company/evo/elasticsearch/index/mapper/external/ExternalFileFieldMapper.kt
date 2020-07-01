@@ -221,7 +221,6 @@ class ExternalFileFieldMapper(
         }
 
         override fun termQuery(value: Any, context: QueryShardContext): Query {
-            println("> termQuery: ${context.shardId}")
             throw QueryShardException(
                     context,
                     "ExternalFile field type does not support search queries"
@@ -240,7 +239,7 @@ class ExternalFileFieldMapper(
                 indexSettings, _, cache, breakerService, mapperService ->
 
                 val keyFieldType = mapperService.fullName(
-                        keyFieldName ?: throw IllegalStateException("[keyFieldName is mandatory")
+                        keyFieldName ?: throw IllegalStateException("[keyFieldName] is mandatory")
                 ) ?: throw IllegalStateException("[$keyFieldName] field is missing")
                 val keyFieldData = keyFieldType
                         .fielddataBuilder(fullyQualifiedIndexName, shardId)
@@ -250,7 +249,7 @@ class ExternalFileFieldMapper(
                         ?: throw IllegalStateException("[$keyFieldName] field must be numeric")
                 val values = ExternalFileService.instance.getValues(
                         mapName ?: throw IllegalStateException("[mapName] is mandatory"),
-                        shardId
+                        if (sharding) shardId else null
                 )
                 ExternalFileFieldData(
                         name(), indexSettings.index, keyFieldData, values

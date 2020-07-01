@@ -21,6 +21,7 @@ import java.util.Collections
 
 import org.elasticsearch.action.search.SearchResponse
 import org.elasticsearch.client.Requests.searchRequest
+import org.elasticsearch.cluster.routing.Murmur3HashFunction
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder
 import org.elasticsearch.env.Environment
@@ -43,6 +44,31 @@ import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
 import company.evo.persistent.hashmap.straight.StraightHashMapEnv
 import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 
+inline fun <T: AutoCloseable?, R> List<T>.use(block: (List<T>) -> R): R {
+    var exception: Throwable? = null
+    try {
+        return block(this)
+    } catch (e: Throwable) {
+        exception = e
+        throw e
+    } finally {
+        for (v in this) {
+            when {
+                v == null -> {}
+                exception == null -> {
+                    v.close()
+                }
+                else -> {
+                    try {
+                        v.close()
+                    } catch (e: Throwable) {
+                        exception.addSuppressed(e)
+                    }
+                }
+            }
+        }
+    }
+}
 
 @ESIntegTestCase.ClusterScope(scope=ESIntegTestCase.Scope.TEST, numDataNodes=0)
 class ExternalFieldMapperIT : ESIntegTestCase() {
@@ -72,25 +98,34 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         assertEquals(1, nodePaths.size)
     }
 
-    private fun initMap(name: String, entries: Map<Int, Float>? = null) {
-        StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
-                .useUnmapHack(true)
-                .open(
-                        extFileService.getExternalFileDir(name)
-                                .also { Files.createDirectories(it) }
-                )
-                .use { mapEnv ->
-                    mapEnv.openMap().use { map ->
-                        entries?.forEach { (k, v) ->
-                            map.put(k, v)
-                        }
+    private fun initMap(name: String, numShards: Int? = null, entries: Map<Int, Float>? = null) {
+        val baseExtFileDir = extFileService.getExternalFileDir(name)
+        val envs = (0 until (numShards ?: 1)).map { shardId ->
+            val extFileDir = if (numShards != null) {
+                baseExtFileDir.resolve(shardId.toString())
+            } else {
+                baseExtFileDir
+            }
+            StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
+                    .useUnmapHack(true)
+                    .open(extFileDir.also { Files.createDirectories(it) })
+        }
+        if (entries != null) {
+            envs.use { mapEnvs ->
+                mapEnvs.map { it.openMap() }.use { maps ->
+                    entries.forEach { (k , v) ->
+                        val shardId = Math.floorMod(Murmur3HashFunction.hash(k.toString()), numShards ?: 1)
+                        val map = maps[shardId]
+                        map.put(k, v)
                     }
                 }
+            }
+        }
     }
 
     fun testDefaults() {
         val indexName = "test"
-        initMap("ext_price", mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+        initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
 
         val mapping = jsonBuilder().obj {
             obj("product") {
@@ -120,44 +155,44 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
     }
 
-    // fun testScalingFactor() {
-    //     val indexName = "test"
-    //     copyTestResources(indexName)
-    //
-    //     val mapping = jsonBuilder().obj {
-    //         obj("product") {
-    //             obj("properties") {
-    //                 obj("name") {
-    //                     field("type", "text")
-    //                 }
-    //                 obj("ext_price") {
-    //                     field("type", "external_file")
-    //                     field("update_interval", 600)
-    //                     field("scaling_factor", 100)
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     client().admin()
-    //             .indices()
-    //             .prepareCreate(indexName)
-    //             .addMapping("product", mapping)
-    //             .get()
-    //
-    //     val index = resolveIndex(indexName)
-    //     // val fileSettings = extFileService.getFileSettings(index, "ext_price")
-    //     // assertThat(fileSettings?.scalingFactor, equalTo(100L))
-    //     // assertThat(extFileService.getValues(index, "ext_price"),
-    //     //         `is`(instanceOf(MemoryIntShortFileValues::class.java)))
-    //     //
-    //     // indexTestDocuments(indexName)
-    //     //
-    //     // assertHits()
-    // }
+    fun testSharding() {
+        val indexName = "test"
+        val numShards = 4
+        initMap("ext_price", numShards, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+
+        val mapping = jsonBuilder().obj {
+            obj("product") {
+                obj("properties") {
+                    obj("id") {
+                        field("type", "integer")
+                    }
+                    obj("name") {
+                        field("type", "text")
+                    }
+                    obj("ext_price") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "ext_price")
+                        field("sharding", true)
+                    }
+                }
+            }
+        }
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .setSettings(Settings.builder().put("index.number_of_shards", numShards))
+                .addMapping("product", mapping)
+                .get()
+
+        indexTestDocuments(indexName)
+
+        assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
+    }
 
     fun testSorting() {
         val indexName = "test"
-        initMap("ext_price", mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+        initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
 
         val mapping = jsonBuilder().obj {
             obj("product") {
@@ -192,7 +227,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
 
     fun testTemplate() {
         val indexName = "test_index"
-        initMap("ext_price", mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+        initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
 
         client().admin().indices().prepareDeleteTemplate("*").get()
 
@@ -230,8 +265,8 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
 
     fun testUpdateMapping() {
         val indexName = "test"
-        initMap("ext_price", mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
-        initMap("new_ext_price", mapOf(1 to -1.1F, 2 to -1.2F, 3 to -1.3F))
+        initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+        initMap("new_ext_price", null, mapOf(1 to -1.1F, 2 to -1.2F, 3 to -1.3F))
 
         val mapping = jsonBuilder().obj {
             obj("product") {
@@ -315,7 +350,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
 
         assertHits(search(), listOf("2" to 0.0F, "4" to 0.0F, "1" to 0.0F, "3" to 0.0F))
 
-        initMap("ext_price", mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+        initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
 
         assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
     }

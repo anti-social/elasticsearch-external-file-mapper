@@ -55,12 +55,11 @@ class ExternalFileService @Inject internal constructor(
 
     fun addFile(indexName: String, fieldName: String, mapName: String, numShards: Int) {
         val extDir = getExternalFileDir(mapName)
-        logger.debug("Adding external file field: {index=$indexName, field=$fieldName, path=$extDir}")
+        logger.info("Adding external file field: {index=$indexName, field=$fieldName, path=$extDir, numShards=$numShards}")
         mapFiles.putIfAbsent(mapName, IntDoubleFileValues.Provider(extDir, numShards))
     }
 
     fun getValues(mapName: String, shardId: Int?): FileValues {
-        logger.debug("> getValues($mapName, $shardId)")
         return mapFiles[mapName]?.getValues(shardId) ?: EmptyFileValues
     }
 
