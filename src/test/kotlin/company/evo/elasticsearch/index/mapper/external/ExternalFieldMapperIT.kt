@@ -190,6 +190,59 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
         assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
     }
 
+    fun testUpdateSharding() {
+        val indexName = "test"
+        val numShards = 8
+        initMap("ext_price", numShards, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+
+        val mapping = jsonBuilder().obj {
+            obj("product") {
+                obj("properties") {
+                    obj("id") {
+                        field("type", "integer")
+                    }
+                    obj("name") {
+                        field("type", "text")
+                    }
+                    obj("ext_price") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "ext_price")
+                    }
+                }
+            }
+        }
+        client().admin()
+                .indices()
+                .prepareCreate(indexName)
+                .setSettings(Settings.builder().put("index.number_of_shards", numShards))
+                .addMapping("product", mapping)
+                .get()
+
+        indexTestDocuments(indexName)
+
+        assertHits(search(), listOf("1" to 0.0F, "2" to 0.0F, "3" to 0.0F, "4" to 0.0F))
+
+        val mappingWithSharding = jsonBuilder().obj {
+            obj("properties") {
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
+                    field("sharding", true)
+                }
+            }
+        }
+        client().admin()
+                .indices()
+                .preparePutMapping(indexName)
+                .setType("product")
+                .setSource(mappingWithSharding)
+                .get()
+
+        assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
+    }
+
     fun testSorting() {
         val indexName = "test"
         initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
@@ -348,7 +401,7 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
 
         indexTestDocuments(indexName)
 
-        assertHits(search(), listOf("2" to 0.0F, "4" to 0.0F, "1" to 0.0F, "3" to 0.0F))
+        assertHits(search(), listOf("1" to 0.0F, "2" to 0.0F, "3" to 0.0F, "4" to 0.0F))
 
         initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
 
@@ -401,6 +454,8 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                 searchRequest().source(
                         searchSource()
                                 .query(query)
+                                .sort("_score")
+                                .sort("id", SortOrder.ASC)
                                 .explain(false)
                 )
         )

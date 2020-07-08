@@ -9,10 +9,14 @@ import company.evo.persistent.hashmap.straight.StraightHashMapRO_Int_Float
 import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 interface FileValues {
     interface Provider : AutoCloseable {
+        val dir: Path
+        val sharding: Boolean
+        val numShards: Int
         val sizeBytes: Long
         fun getValues(shardId: Int?): FileValues
     }
@@ -41,24 +45,29 @@ class IntDoubleFileValues(
         private val map: StraightHashMapRO_Int_Float
 ) : FileValues {
 
-    class Provider(private val dir: Path, numShards: Int) : FileValues.Provider {
+    class Provider(override val dir: Path, override val sharding: Boolean, override val numShards: Int) : FileValues.Provider {
         private val mapEnvs: Array<AtomicReference<StraightHashMapROEnv_Int_Float?>> = Array(numShards) {
             AtomicReference<StraightHashMapROEnv_Int_Float?>(null)
+        }
+
+        override fun equals(other: Any?): Boolean {
+            if (other !is Provider) return false
+            return dir == other.dir && sharding == other.sharding && numShards == other.numShards
         }
 
         override val sizeBytes: Long
             get() = TODO("not implemented")
 
         override fun getValues(shardId: Int?): FileValues {
-            val mapDir = if (shardId != null) {
-                dir.resolve(shardId.toString())
-            } else {
-                dir
-            }
             val mapEnv = mapEnvs[shardId ?: 0]
             var env = mapEnv.get()
             if (env == null) {
                 try {
+                    val mapDir = if (shardId != null) {
+                        dir.resolve(shardId.toString())
+                    } else {
+                        dir
+                    }
                     val newEnv = StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
                             .useUnmapHack(true)
                             .openReadOnly(mapDir)

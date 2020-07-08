@@ -30,7 +30,13 @@ import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.index.Index
-import org.elasticsearch.index.fielddata.*
+import org.elasticsearch.index.fielddata.AtomicNumericFieldData
+import org.elasticsearch.index.fielddata.IndexFieldData
+import org.elasticsearch.index.fielddata.IndexNumericFieldData
+import org.elasticsearch.index.fielddata.FieldData
+import org.elasticsearch.index.fielddata.ScriptDocValues
+import org.elasticsearch.index.fielddata.SortedBinaryDocValues
+import org.elasticsearch.index.fielddata.SortedNumericDoubleValues
 import org.elasticsearch.index.fielddata.fieldcomparator.DoubleValuesComparatorSource
 import org.elasticsearch.index.mapper.FieldMapper
 import org.elasticsearch.index.mapper.MappedFieldType
@@ -42,8 +48,6 @@ import org.elasticsearch.index.query.QueryShardException
 import org.elasticsearch.search.MultiValueMode
 
 import company.evo.elasticsearch.indices.*
-
-import kotlin.IllegalStateException
 
 
 class ExternalFileFieldMapper(
@@ -170,7 +174,8 @@ class ExternalFileFieldMapper(
                         indexName,
                         name,
                         mapName ?: throw IllegalStateException("mapName property must be set"),
-                        if (sharding) numShards else 1
+                        sharding,
+                        numShards
                 )
             }
             setupFieldType(context)

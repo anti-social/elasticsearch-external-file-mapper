@@ -25,13 +25,17 @@ import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.env.NodeEnvironment
 
+import company.evo.rc.RefCounted
+import company.evo.rc.AtomicRefCounted
+import company.evo.rc.use
+
 class ExternalFileService @Inject internal constructor(
         nodeEnv: NodeEnvironment
 ) : AbstractLifecycleComponent() {
 
     private val logger = LogManager.getLogger(this::javaClass)
     private val externalDataDir = nodeEnv.sharedDataPath().resolve(EXTERNAL_DIR_NAME)
-    private val mapFiles = ConcurrentHashMap<String, FileValues.Provider>()
+    private val mapFiles = ConcurrentHashMap<String, RefCounted<FileValues.Provider>>()
 
     companion object {
         const val EXTERNAL_DIR_NAME = "external_files"
@@ -48,19 +52,41 @@ class ExternalFileService @Inject internal constructor(
 
     override fun doClose() {
         mapFiles.forEach { (_, valuesProvider) ->
-            valuesProvider.close()
+            valuesProvider.release()
         }
         mapFiles.clear()
     }
 
-    fun addFile(indexName: String, fieldName: String, mapName: String, numShards: Int) {
+    fun addFile(indexName: String, fieldName: String, mapName: String, sharding: Boolean, numShards: Int) {
         val extDir = getExternalFileDir(mapName)
-        logger.info("Adding external file field: {index=$indexName, field=$fieldName, path=$extDir, numShards=$numShards}")
-        mapFiles.putIfAbsent(mapName, IntDoubleFileValues.Provider(extDir, numShards))
+
+        // We don't need synchronization as compute function invocation performs atomically
+        mapFiles.compute(mapName) { _, v ->
+            val curProvider = v?.get()
+            if (curProvider == null ||
+                    curProvider.dir != extDir || curProvider.sharding != sharding || curProvider.numShards != numShards) {
+                logger.info("Adding external file field: {index=$indexName, field=$fieldName, path=$extDir, sharding=$sharding, numShards=$numShards}")
+                v?.release()
+                AtomicRefCounted(IntDoubleFileValues.Provider(extDir, sharding, numShards)) { it.close() }
+            } else {
+                v
+            }
+        }
     }
 
     fun getValues(mapName: String, shardId: Int?): FileValues {
-        return mapFiles[mapName]?.getValues(shardId) ?: EmptyFileValues
+        repeat(100) {
+            val v = mapFiles[mapName] ?: return EmptyFileValues
+            val valuesProvider = v.retain()
+            if (valuesProvider != null) {
+                try {
+                    return valuesProvider.getValues(shardId)
+                } finally {
+                    v.release()
+                }
+            }
+        }
+        throw IllegalStateException("Cannot get values for map: ${mapName}")
     }
 
     fun getExternalFileDir(name: String): Path {
