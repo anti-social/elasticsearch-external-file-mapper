@@ -94,7 +94,7 @@ class ExternalFileFieldMapper(
         if (includeDefaults || fieldType().keyFieldName != null) {
             builder.field("key_field", fieldType().keyFieldName)
         }
-        if (includeDefaults || fieldType().keyFieldName != null) {
+        if (includeDefaults || fieldType().sharding) {
             builder.field("sharding", fieldType().sharding)
         }
     }

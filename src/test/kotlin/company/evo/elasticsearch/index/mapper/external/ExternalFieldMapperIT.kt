@@ -150,6 +150,19 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                 .addMapping("product", mapping)
                 .get()
 
+        val mappingsResponse = client().admin()
+                .indices()
+                .prepareGetMappings(indexName)
+                .get()
+        val productMapping = mappingsResponse.mappings()["test"]["product"]
+        assertThat(productMapping.type(), equalTo("product"))
+        val productFields = productMapping.sourceAsMap()["properties"] as Map<*, *>
+        val extPriceField = productFields["ext_price"] as Map<*, *>
+        assertThat(extPriceField["type"] as String, equalTo("external_file"))
+        assertThat(extPriceField["key_field"] as String, equalTo("id"))
+        assertThat(extPriceField["map_name"] as String, equalTo("ext_price"))
+        assertThat(extPriceField.size, equalTo(3))
+
         indexTestDocuments(indexName)
 
         assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
@@ -184,6 +197,20 @@ class ExternalFieldMapperIT : ESIntegTestCase() {
                 .setSettings(Settings.builder().put("index.number_of_shards", numShards))
                 .addMapping("product", mapping)
                 .get()
+
+        val mappingsResponse = client().admin()
+                .indices()
+                .prepareGetMappings(indexName)
+                .get()
+        val productMapping = mappingsResponse.mappings()["test"]["product"]
+        assertThat(productMapping.type(), equalTo("product"))
+        val productFields = productMapping.sourceAsMap()["properties"] as Map<*, *>
+        val extPriceField = productFields["ext_price"] as Map<*, *>
+        assertThat(extPriceField["type"] as String, equalTo("external_file"))
+        assertThat(extPriceField["key_field"] as String, equalTo("id"))
+        assertThat(extPriceField["map_name"] as String, equalTo("ext_price"))
+        assertThat(extPriceField["sharding"] as Boolean, equalTo(true))
+        assertThat(extPriceField.size, equalTo(4))
 
         indexTestDocuments(indexName)
 
