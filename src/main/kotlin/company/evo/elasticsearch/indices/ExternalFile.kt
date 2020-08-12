@@ -14,6 +14,7 @@ import java.util.stream.LongStream
 
 import org.apache.http.client.config.RequestConfig
 import org.apache.http.client.methods.HttpGet
+import org.apache.http.client.utils.URIBuilder
 import org.apache.http.impl.client.HttpClients
 
 import org.apache.logging.log4j.Logger
@@ -21,6 +22,8 @@ import org.apache.logging.log4j.LogManager
 
 import net.uaprom.htable.HashTable
 import net.uaprom.htable.TrieHashTable
+import java.io.BufferedInputStream
+import java.nio.file.Paths
 
 
 const val MAP_LOAD_FACTOR: Float = 0.75F
@@ -29,6 +32,11 @@ internal data class FileKey(
         val indexName: String,
         val fieldName: String
 )
+
+enum class FileFormat {
+    TEXT,
+    PROTOBUF,
+}
 
 enum class ValuesStoreType {
     RAM,
@@ -63,6 +71,7 @@ data class FileSettings(
         val updateScatter: Long?,
         val scalingFactor: Long?,
         val url: String?,
+        val format: FileFormat,
         val timeout: Int?
 ) {
     fun isUpdateChanged(other: FileSettings): Boolean {
@@ -97,7 +106,7 @@ class ExternalFile(
     constructor(dir: Path, name: String, indexName: String, settings: FileSettings) :
             this(dir, name, indexName, settings, LogManager.getLogger(ExternalFile::class.java))
 
-    fun download(): Boolean {
+    fun download(shards: List<Int>): Boolean {
         val requestConfigBuilder = RequestConfig.custom()
         if (settings.timeout != null) {
             val timeout = settings.timeout * 1000
@@ -109,10 +118,16 @@ class ExternalFile(
         val client = HttpClients.custom()
                 .setDefaultRequestConfig(requestConfig)
                 .build()
-        val httpGet = HttpGet(settings.url)
+        val url = URIBuilder(settings.url)
+        if (settings.format == FileFormat.PROTOBUF) {
+            for ((ix, shardId) in shards.withIndex()) {
+                url.setParameter("shards[$ix]", shardId.toString())
+            }
+        }
+        val httpGet = HttpGet(url.build())
         val ver = getCurrentVersion()
         if (ver != null) {
-            httpGet.addHeader("If-Modified-Since", ver)
+            httpGet.addHeader("If-Modified-Since", ver.lastModified)
         }
         try {
             val resp = client.execute(httpGet)
@@ -121,6 +136,7 @@ class ExternalFile(
                     304 -> return false
                     200 -> {
                         val lastModified = resp.getLastHeader("Last-Modified").value
+                        val numEntries = resp.getLastHeader("X-Num-Entries")?.value?.let(Integer::parseInt)
                         if (resp.entity == null) {
                             logger.warn("Missing content when downloading [${settings.url}]")
                             return false
@@ -134,7 +150,7 @@ class ExternalFile(
                         } finally {
                             Files.deleteIfExists(tmpPath)
                         }
-                        updateVersion(lastModified)
+                        updateVersion(lastModified, numEntries)
                         return true
                     }
                     else -> {
@@ -173,7 +189,7 @@ class ExternalFile(
         return null
     }
 
-    private fun parse(path: Path): ParsedValues {
+    private fun parseText(path: Path): ParsedValues {
         val startAt = System.nanoTime()
         val maxRows = Files.newBufferedReader(path).use {
             var maxRows: Int? = null
@@ -198,8 +214,8 @@ class ExternalFile(
         var maxValue = Double.NEGATIVE_INFINITY
         var keys = LongArray(maxRows ?: 1000)
         var values = DoubleArray(maxRows ?: 1000)
-        Files.newBufferedReader(path).use {
-            it.lines()
+        Files.newBufferedReader(path).use { reader ->
+            reader.lines()
                     .map { it.trim() }
                     .filter { !it.isEmpty() }
                     .filter { !it.startsWith("#") }
@@ -243,10 +259,54 @@ class ExternalFile(
                 numRows, maxKey, minValue, maxValue)
     }
 
+    private fun parseProtobuf(path: Path, numEntries: Int): ParsedValues {
+        val startAt = System.nanoTime()
+        val parser = ExtFile.Entry.parser()
+        val keys = LongArray(numEntries)
+        val values = DoubleArray(numEntries)
+        var maxKey = Long.MIN_VALUE
+        var maxValue = Double.MIN_VALUE
+        var minValue = Double.MAX_VALUE
+        BufferedInputStream(Files.newInputStream(path)).use { input ->
+            var ix = 0
+            while (ix < numEntries) {
+                val entry = parser.parseDelimitedFrom(input)
+                val key = entry.key
+                val value = entry.value.toDouble()
+                keys[ix] = key
+                values[ix] = value
+                if (entry.key > maxKey) {
+                    maxKey = key
+                }
+                if (entry.value > maxValue) {
+                    maxValue = value
+                }
+                if (entry.value < minValue) {
+                    minValue = value
+                }
+                ix++
+            }
+        }
+
+        val duration = (System.nanoTime() - startAt) / 1000_000
+        logger.info("Parsed ${keys.size} values " +
+            "for [$name] field of [${indexName}] index " +
+            "from file [$path] for ${duration}ms")
+        return ParsedValues(keys, values, numEntries, maxKey, minValue, maxValue)
+    }
+
     private fun getMemoryValuesProvider(
             lastModified: FileTime, scalingFactor: Long?): FileValues.Provider
     {
-        val parsedValues = parse(getExternalFilePath())
+        val extFilePath = getExternalFilePath()
+        val parsedValues = when (settings.format) {
+            FileFormat.TEXT -> parseText(extFilePath)
+            FileFormat.PROTOBUF -> {
+                val ver = getCurrentVersion()
+                val numEntries = ver?.numEntries ?: 0
+                parseProtobuf(extFilePath, numEntries)
+            }
+        }
         val valuesProvider = if (scalingFactor != null) {
             val minValue = (parsedValues.minValue * scalingFactor).toLong()
             val maxValue = (parsedValues.maxValue * scalingFactor).toLong()
@@ -293,7 +353,7 @@ class ExternalFile(
             FileTime.fromMillis(0)
         }
         if (indexLastModified < lastModified) {
-            val parsedValues = parse(getExternalFilePath())
+            val parsedValues = parseText(getExternalFilePath())
             val writer = TrieHashTable.Writer(
                     HashTable.ValueSize.LONG, TrieHashTable.BitmaskSize.LONG)
             val data = writer.dumpDoubles(parsedValues.keys, parsedValues.values)
@@ -316,11 +376,22 @@ class ExternalFile(
         return MappedFileValues.Provider(mappedData, dataSize, lastModified)
     }
 
-    internal fun getCurrentVersion(): String? {
+    internal fun getCurrentVersion(): ExtFile.Version? {
         val versionPath = getVersionFilePath()
         try {
-            Files.newBufferedReader(versionPath).use {
-                return it.readLine()
+            return when (settings.format) {
+                FileFormat.TEXT -> {
+                    Files.newBufferedReader(versionPath).use {
+                        ExtFile.Version.newBuilder()
+                            .setLastModified(it.readLine())
+                            .build()
+                    }
+                }
+                FileFormat.PROTOBUF -> {
+                    BufferedInputStream(Files.newInputStream(getVersionFilePath())).use { input ->
+                        ExtFile.Version.parseFrom(input)
+                    }
+                }
             }
         } catch (e: NoSuchFileException) {
             return null
@@ -330,23 +401,46 @@ class ExternalFile(
         }
     }
 
-    internal fun updateVersion(ver: String) {
+    internal fun updateVersion(ver: String, numEntries: Int?) {
         val versionPath = getVersionFilePath()
+        val tmpPath = Files.createTempFile(dir, getVersionFileName(), null)
         try {
-            Files.newBufferedWriter(versionPath).use {
-                it.write(ver)
+            when (settings.format) {
+                FileFormat.TEXT -> Files.newBufferedWriter(tmpPath).use {
+                    it.write(ver)
+                }
+                FileFormat.PROTOBUF -> Files.newOutputStream(tmpPath).use {
+                    ExtFile.Version.newBuilder()
+                        .setLastModified(ver)
+                        .setNumEntries(numEntries ?: 0)
+                        .build()
+                        .writeTo(it)
+                }
             }
+            Files.move(tmpPath, versionPath, StandardCopyOption.ATOMIC_MOVE)
         } catch (e: IOException) {
             logger.warn("Cannot write file [$versionPath]: $e")
         }
     }
 
     internal fun getExternalFilePath(): Path {
-        return dir.resolve("$name.txt")
+        return dir.resolve(
+            when (settings.format) {
+                FileFormat.TEXT -> "$name.txt"
+                FileFormat.PROTOBUF -> "$name.protobuf"
+            }
+        )
     }
 
     internal fun getVersionFilePath(): Path {
-        return dir.resolve("$name.ver")
+        return dir.resolve(getVersionFileName())
+    }
+
+    internal fun getVersionFileName(): String {
+        return when (settings.format) {
+            FileFormat.TEXT -> "$name.ver"
+            FileFormat.PROTOBUF -> "$name.ver.protobuf"
+        }
     }
 
     internal fun getBinaryFilePath(): Path {

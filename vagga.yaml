@@ -1,7 +1,7 @@
 _default:
   gradle-home: &gradle-home /work/.gradle
   cmd-opts: &cmd-opts
-    container: kotlin-sdk
+    container: jdk
     user-id: 1
     external-user-id: 0
     prerequisites: [_mk-gradle-user-home]
@@ -9,37 +9,22 @@ _default:
       /work/.gradle/caches: !CacheDir gradle-cache
 
 containers:
-  kotlin-sdk:
+  jdk:
     environ:
       JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
       GRADLE_USER_HOME: *gradle-home
     setup:
-    - !Ubuntu xenial
+    - !Ubuntu focal
+    - !UbuntuUniverse
     - !Install
       - openjdk-8-jdk-headless
-    - !EnsureDir /opt/gradle
-    - !Unzip
-      url: https://services.gradle.org/distributions/gradle-4.0-bin.zip
-      sha256: 56bd2dde29ba2a93903c557da1745cafd72cdd8b6b0b83c05a40ed7896b79dfe
-      subdir: gradle-4.0
-      path: /opt/gradle
-    - !Sh ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle
-    - !EnsureDir /opt/kotlinc
-    - !Unzip
-      url: https://github.com/JetBrains/kotlin/releases/download/v1.1.4/kotlin-compiler-1.1.4.zip
-      sha256: 53b25b6310bed62865cbc5f7b87866a53577d0430df2e995783256bfcba05d91
-      subdir: kotlinc
-      path: /opt/kotlinc
-    - !Sh ln -s /opt/kotlinc/bin/kotlinc /usr/local/bin/kotlinc
 
   web-server:
     setup:
-    - !Ubuntu xenial
-    - !Tar
-      url: https://github.com/cortesi/devd/releases/download/v0.7/devd-0.7-linux64.tgz
-      sha256: 3bf919c081f46d4a0e1e5c8f35d943b949db39811f4b99177d90465ebb17fd4c
-      subdir: devd-0.7-linux64
-      path: /opt/devd
+    - !Ubuntu focal
+    - !Install
+      - python3
+    - !Py3Requirements test-server/requirements.txt
 
   elastic:
     environ:
@@ -66,7 +51,7 @@ containers:
 
 commands:
   _mk-gradle-user-home: !Command
-    container: kotlin-sdk
+    container: jdk
     run: mkdir -p $GRADLE_USER_HOME/caches
 
   daemon: !Command
@@ -83,71 +68,62 @@ commands:
   assemble: !Command
     <<: *cmd-opts
     description: Assembles the outputs of this project
-    run: [gradle, assemble]
+    run: [./gradlew, assemble]
 
   assemble-release: !Command
     <<: *cmd-opts
     description: Assembles the outputs of this project
-    run: [gradle, assemble, -Prelease]
+    run: [./gradlew, assemble, -Prelease]
 
   build: !Command
     <<: *cmd-opts
     description: Assembles and tests this project
-    run: [gradle, build]
+    run: [./gradlew, build]
 
   compile: !Command
     <<: *cmd-opts
     description: Compiles main source files
-    run: [gradle, compileKotlin]
+    run: [./gradlew, compileKotlin]
 
   compile-test: !Command
     <<: *cmd-opts
     description: Compiles test source files
-    run: [gradle, compileTestKotlin]
+    run: [./gradlew, compileTestKotlin]
 
   test-unit: !Command
     <<: *cmd-opts
     description: Runs unit tests
-    run: [gradle, test]
+    run: [./gradlew, test]
 
   test-integ: !Command
     <<: *cmd-opts
     description: Runs integration tests
-    run: [gradle, integTest, -Dtests.class=*.ExternalFieldMapperIT]
+    run: [./gradlew, integTest, -Dtests.class=*.ExternalFieldMapperIT]
 
   clean: !Command
     <<: *cmd-opts
     description: Deletes the build directory
-    run: [gradle, clean]
+    run: [./gradlew, clean]
 
   clean-build: !Command
     <<: *cmd-opts
     description: Deletes the build directory and then assembles and tests the project
-    run: [gradle, clean, build]
+    run: [./gradlew, clean, build]
 
   gradle: !Command
     <<: *cmd-opts
     description: Runs arbitrary gradle task
-    run: [gradle]
-
-  kotlinc: !Command
-    <<: *cmd-opts
-    description: Runs kotlin compiler
-    run: [kotlinc]
-
-  java: !Command
-    <<: *cmd-opts
-    description: Runs java virtual machine
-    run: [java]
+    run: [./gradlew]
 
   serve-test-files: &serve-test-files !Command
     description: Runs web server that serves files for tests
     container: web-server
-    run: /opt/devd/devd -p 8080 ./src/test/resources/indices
+    work-dir: test-server
+    run: python3 -m aiohttp.web -H localhost -P 8080 test_server.main:main ../src/test/resources/indices
 
   test-func: !Supervise
     options: |
-      Usage: vagga test-func [--no-daemon] [options]
+      Usage: vagga test-func [--no-daemon] [--info] [options]
 
       Options:
         --no-daemon  Run build without daemon
@@ -156,7 +132,7 @@ commands:
       test: !Command
         <<: *cmd-opts
         run: |
-            gradle testFunc $VAGGACLI_NO_DAEMON
+            ./gradlew testFunc $VAGGACLI_NO_DAEMON $VAGGACLI_INFO
 
   test: !Command
     <<: *cmd-opts

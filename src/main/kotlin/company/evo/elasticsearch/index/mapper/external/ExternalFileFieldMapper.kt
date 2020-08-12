@@ -161,6 +161,9 @@ class ExternalFileFieldMapper(
         if (includeDefaults || fileSettings.url != null) {
             builder.field("url", fileSettings.url)
         }
+        if (includeDefaults || fileSettings.format != FileFormat.TEXT) {
+            builder.field("format", fileSettings.format)
+        }
         if (includeDefaults || timeout != null) {
             builder.field("timeout", timeout)
         }
@@ -204,6 +207,10 @@ class ExternalFileFieldMapper(
                         builder.url(value.toString())
                         entries.remove()
                     }
+                    "format" -> {
+                        builder.format(FileFormat.valueOf(value.toString().toUpperCase(Locale.ENGLISH)))
+                        entries.remove()
+                    }
                     "timeout" -> {
                         builder.timeout(TimeValueWithOriginal.parse(value, "timeout"))
                         entries.remove()
@@ -229,6 +236,7 @@ class ExternalFileFieldMapper(
         private var updateInterval: TimeValueWithOriginal? = null
         private var updateScatter: TimeValueOrPercent? = null
         private var url: String? = null
+        private var format: FileFormat? = null
         private var timeout: TimeValueWithOriginal? = null
 
         constructor(name: String) : super(name, FIELD_TYPE, FIELD_TYPE) {
@@ -253,6 +261,7 @@ class ExternalFileFieldMapper(
                     updateIntervalScatter?.seconds,
                     scalingFactor,
                     url,
+                    format ?: FileFormat.TEXT,
                     timeout?.time?.seconds?.toInt())
             // There is no index when putting template
             if (indexName != null && indexUuid != null) {
@@ -301,6 +310,11 @@ class ExternalFileFieldMapper(
 
         fun url(url: String): Builder {
             this.url = url
+            return this
+        }
+
+        fun format(format: FileFormat): Builder {
+            this.format = format
             return this
         }
 

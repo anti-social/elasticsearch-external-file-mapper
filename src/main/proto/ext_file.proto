@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package company.evo.elasticsearch.indices;
+
+option java_outer_classname = "ExtFile";
+
+message Version {
+    string last_modified = 1;
+    uint32 num_entries = 2;
+}
+message Entry {
+    uint64 key = 1;
+    float value = 2;
+}

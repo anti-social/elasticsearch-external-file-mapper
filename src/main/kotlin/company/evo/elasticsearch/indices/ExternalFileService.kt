@@ -41,7 +41,7 @@ import org.elasticsearch.threadpool.ThreadPool
 
 class ExternalFileService : AbstractLifecycleComponent {
 
-    private val nodeDir: Path
+    private val nodeEnv: NodeEnvironment
     private val threadPool: ThreadPool
     private val files = HashMap<FileKey, ExternalFileField>()
     // TODO Eliminate nullability of the value type
@@ -63,7 +63,7 @@ class ExternalFileService : AbstractLifecycleComponent {
             settings: Settings,
             threadPool: ThreadPool,
             nodeEnv: NodeEnvironment) : super(settings) {
-        this.nodeDir = nodeEnv.nodeDataPaths()[0]
+        this.nodeEnv = nodeEnv
         this.threadPool = threadPool
         instance = this
     }
@@ -105,6 +105,7 @@ class ExternalFileService : AbstractLifecycleComponent {
                 extFile.loadValues(null)
             }
         }
+
         this.files.computeIfAbsent(key) {
             logger.debug("Scheduling update task every " +
                     "${fileSettings.updateInterval} ± ${fileSettings.updateScatter ?: 0 / 2} seconds: " +
@@ -118,9 +119,10 @@ class ExternalFileService : AbstractLifecycleComponent {
                     threadPool,
                     Loggers.getLogger(ScatteredReschedulingRunnable::class.java)
             ) {
+                val shardIds = nodeEnv.findAllShardIds(index).map { it.id }.sorted()
                 logger.debug("Started updating: [${index.name}] [$fieldName]")
                 if (fileSettings.url != null) {
-                    extFile.download()
+                    extFile.download(shardIds)
                 }
                 this.values.compute(key) { _, oldValues ->
                     extFile.loadValues(oldValues?.lastModified) ?: oldValues
@@ -165,7 +167,7 @@ class ExternalFileService : AbstractLifecycleComponent {
     }
 
     private fun getDirForIndex(index: Index): Path {
-        return this.nodeDir
+        return this.nodeEnv.nodeDataPaths()[0]
                 .resolve(EXTERNAL_DIR_NAME)
                 .resolve(index.name)
     }
