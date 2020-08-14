@@ -1,5 +1,6 @@
 package company.evo.elasticsearch.indices
 
+import java.io.BufferedInputStream
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.nio.channels.FileChannel
@@ -9,21 +10,20 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.FileTime
 import java.nio.file.NoSuchFileException
-import java.util.*
+import java.util.Random
 import java.util.stream.LongStream
 
 import org.apache.http.client.config.RequestConfig
 import org.apache.http.client.methods.HttpGet
 import org.apache.http.client.utils.URIBuilder
 import org.apache.http.impl.client.HttpClients
+import org.apache.http.protocol.HttpDateGenerator
 
 import org.apache.logging.log4j.Logger
 import org.apache.logging.log4j.LogManager
 
 import net.uaprom.htable.HashTable
 import net.uaprom.htable.TrieHashTable
-import java.io.BufferedInputStream
-import java.nio.file.Paths
 
 
 const val MAP_LOAD_FACTOR: Float = 0.75F
@@ -120,9 +120,7 @@ class ExternalFile(
                 .build()
         val url = URIBuilder(settings.url)
         if (settings.format == FileFormat.PROTOBUF) {
-            for ((ix, shardId) in shards.withIndex()) {
-                url.setParameter("shards[$ix]", shardId.toString())
-            }
+            url.setParameter("shards", shards.joinToString(","))
         }
         val httpGet = HttpGet(url.build())
         val ver = getCurrentVersion()
@@ -135,7 +133,8 @@ class ExternalFile(
                 when (resp.statusLine.statusCode) {
                     304 -> return false
                     200 -> {
-                        val lastModified = resp.getLastHeader("Last-Modified").value
+                        val lastModified = resp.getLastHeader("Last-Modified")?.value
+                            ?: HttpDateGenerator().getCurrentDate()
                         val numEntries = resp.getLastHeader("X-Num-Entries")?.value?.let(Integer::parseInt)
                         if (resp.entity == null) {
                             logger.warn("Missing content when downloading [${settings.url}]")
@@ -146,11 +145,11 @@ class ExternalFile(
                             resp.entity?.content?.use { inStream ->
                                 Files.copy(inStream, tmpPath, StandardCopyOption.REPLACE_EXISTING)
                                 Files.move(tmpPath, getExternalFilePath(), StandardCopyOption.ATOMIC_MOVE)
+                                updateVersion(lastModified, numEntries)
                             }
                         } finally {
                             Files.deleteIfExists(tmpPath)
                         }
-                        updateVersion(lastModified, numEntries)
                         return true
                     }
                     else -> {
