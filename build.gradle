@@ -40,8 +40,8 @@ repositories {
 
 dependencies {
     compile "org.jetbrains.kotlin:kotlin-stdlib"
-    compile "org.apache.httpcomponents:httpcore:${versions.httpcore}"
-    compile "org.apache.httpcomponents:httpclient:${versions.httpclient}"
+    compile "org.apache.httpcomponents:httpcore:4.4.13"
+    compile "org.apache.httpcomponents:httpclient:4.5.12"
     compile "commons-logging:commons-logging:${versions.commonslogging}"
     compile "com.google.protobuf:protobuf-java:3.12.4"
     compile "net.sf.trove4j:trove4j:3.0.3"
