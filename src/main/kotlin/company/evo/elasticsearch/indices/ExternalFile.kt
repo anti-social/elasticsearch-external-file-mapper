@@ -76,9 +76,10 @@ data class FileSettings(
 ) {
     fun isUpdateChanged(other: FileSettings): Boolean {
         return other.updateInterval != updateInterval ||
-                other.updateScatter != updateScatter ||
-                other.url != url ||
-                other.timeout != timeout
+            other.updateScatter != updateScatter ||
+            other.url != url ||
+            other.timeout != timeout ||
+            other.format != format
     }
 
     fun isStoreChanged(other: FileSettings): Boolean {
