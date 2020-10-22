@@ -22,6 +22,7 @@ plugins {
     idea
     java
     kotlin("jvm") version "1.3.50"
+    id("org.ajoberstar.grgit") version "3.1.1"
     id("com.jfrog.bintray") version "1.8.4"
 }
 
@@ -43,17 +44,9 @@ configure<org.elasticsearch.gradle.plugin.PluginPropertiesExtension> {
     noticeFile = rootProject.file("NOTICE.txt")
 }
 
-val appVersion =  project.file("project.version")
-        .readLines()
-        .first()
-        .toUpperCase()
-        .let { ver ->
-            if (hasProperty("release")) {
-                ver.removeSuffix("-SNAPSHOT")
-            } else {
-                ver
-            }
-        }
+val grgit: org.ajoberstar.grgit.Grgit by extra
+val tag = grgit.describe(mapOf("tags" to true, "match" to listOf("v*"))) ?: "v0.0.0"
+val appVersion = tag.trimStart('v')
 val versions = VersionProperties.getVersions() as Map<String, String>
 project.version = "$appVersion-es${versions["elasticsearch"]}"
 
