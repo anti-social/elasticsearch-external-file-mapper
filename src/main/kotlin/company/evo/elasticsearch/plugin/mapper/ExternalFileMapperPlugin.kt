@@ -18,11 +18,18 @@ package company.evo.elasticsearch.plugin.mapper
 
 import java.util.Collections
 
-import org.elasticsearch.common.inject.AbstractModule
-import org.elasticsearch.common.inject.Module
+import org.elasticsearch.client.Client
+import org.elasticsearch.cluster.service.ClusterService
+import org.elasticsearch.common.io.stream.NamedWriteableRegistry
+import org.elasticsearch.common.xcontent.NamedXContentRegistry
+import org.elasticsearch.env.Environment
+import org.elasticsearch.env.NodeEnvironment
 import org.elasticsearch.index.mapper.Mapper
 import org.elasticsearch.plugins.MapperPlugin
 import org.elasticsearch.plugins.Plugin
+import org.elasticsearch.script.ScriptService
+import org.elasticsearch.threadpool.ThreadPool
+import org.elasticsearch.watcher.ResourceWatcherService
 
 import company.evo.elasticsearch.index.mapper.external.ExternalFileFieldMapper
 import company.evo.elasticsearch.indices.ExternalFileService
@@ -36,13 +43,19 @@ class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
                 ExternalFileFieldMapper.TypeParser())
     }
 
-    // TODO Override createComponents method when updating Elasticsearch to 6.0
-    // we need NodeEnvironment instance to get node data paths
-    override fun createGuiceModules(): Collection<Module> {
-        return Collections.singleton(object : AbstractModule() {
-            override fun configure() {
-                bind(ExternalFileService::class.java).asEagerSingleton()
-            }
-        })
+    override fun createComponents(
+        client: Client,
+        clusterService: ClusterService,
+        threadPool: ThreadPool,
+        resourceWatcherService: ResourceWatcherService,
+        scriptService: ScriptService,
+        xContentRegistry: NamedXContentRegistry,
+        environment: Environment,
+        nodeEnvironment: NodeEnvironment,
+        namedWriteableRegistry: NamedWriteableRegistry
+    ): MutableCollection<Any> {
+        return mutableListOf(
+            ExternalFileService(nodeEnvironment)
+        )
     }
 }

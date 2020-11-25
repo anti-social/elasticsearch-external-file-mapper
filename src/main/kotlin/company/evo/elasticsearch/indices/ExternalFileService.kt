@@ -18,18 +18,18 @@ package company.evo.elasticsearch.indices
 
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 import org.apache.logging.log4j.LogManager
 
 import org.elasticsearch.common.component.AbstractLifecycleComponent
-import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.env.NodeEnvironment
 
 import company.evo.rc.RefCounted
 import company.evo.rc.AtomicRefCounted
-import company.evo.rc.use
 
-class ExternalFileService @Inject internal constructor(
+
+class ExternalFileService internal constructor(
         nodeEnv: NodeEnvironment
 ) : AbstractLifecycleComponent() {
 
@@ -39,11 +39,18 @@ class ExternalFileService @Inject internal constructor(
 
     companion object {
         const val EXTERNAL_DIR_NAME = "external_files"
-        lateinit var instance: ExternalFileService
+        private var lateInstance = AtomicReference<ExternalFileService>()
+        val instance: ExternalFileService
+            get() {
+                return lateInstance.get()
+                    ?: throw IllegalStateException("ExternalFileService is not initialized")
+            }
     }
 
     init {
-        instance = this
+        if (!lateInstance.compareAndSet(null, this)) {
+            throw IllegalStateException("ExternalFileService must exist in a single copy")
+        }
     }
 
     override fun doStart() {}
