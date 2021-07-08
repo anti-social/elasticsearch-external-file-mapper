@@ -30,13 +30,6 @@ script:
 - vagga test-unit $GRADLE_ARGS
 - vagga test-integ $GRADLE_ARGS
 
-after_success:
-- |
-  echo $TRAVIS_TAG
-  if [[ $TRAVIS_TAG == v*-es* ]]; then
-    vagga -e BINTRAY_USER -e BINTRAY_API_KEY gradle bintrayUpload $GRADLE_ARGS
-  fi
-
 cache:
   directories:
   - $HOME/.cache/vagga/gradle-cache

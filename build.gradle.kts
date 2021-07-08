@@ -1,7 +1,5 @@
 import java.util.Date
 import com.carrotsearch.gradle.junit4.RandomizedTestingTask
-import com.jfrog.bintray.gradle.BintrayExtension
-import com.jfrog.bintray.gradle.tasks.RecordingCopyTask
 import org.elasticsearch.gradle.VersionProperties
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
@@ -23,7 +21,6 @@ plugins {
     java
     kotlin("jvm") version "1.3.50"
     id("org.ajoberstar.grgit") version "3.1.1"
-    id("com.jfrog.bintray") version "1.8.4"
 }
 
 apply {
@@ -52,9 +49,6 @@ project.version = "$appVersion-es${versions["elasticsearch"]}"
 
 repositories {
     mavenCentral()
-    maven {
-        url = uri("https://dl.bintray.com/evo/maven")
-    }
 }
 
 dependencies {
@@ -83,38 +77,4 @@ tasks.register("listRepos") {
             println("Name: ${it.name}; url: ${it.url}")
         }
     }
-}
-
-bintray {
-    user = if (hasProperty("bintrayUser")) {
-        property("bintrayUser").toString()
-    } else {
-        System.getenv("BINTRAY_USER")
-    }
-    key = if (hasProperty("bintrayApiKey")) {
-        property("bintrayApiKey").toString()
-    } else {
-        System.getenv("BINTRAY_API_KEY")
-    }
-    pkg(delegateClosureOf<BintrayExtension.PackageConfig> {
-        repo = "elasticsearch"
-        name = project.name
-        userOrg = "evo"
-        setLicenses("Apache-2.0")
-        setLabels("elasticsearch-plugin", "external-file-mapper")
-        vcsUrl = "https://github.com/anti-social/elasticsearch-external-field-mapper.git"
-        version(delegateClosureOf<BintrayExtension.VersionConfig> {
-            name = appVersion
-            released = Date().toString()
-            vcsTag = "v$appVersion"
-        })
-    })
-    filesSpec(delegateClosureOf<RecordingCopyTask> {
-        val distributionsDir = buildDir.resolve("distributions")
-        from(distributionsDir)
-        include("*-$appVersion-*.zip")
-        into(".")
-    })
-    publish = true
-    dryRun = hasProperty("bintrayDryRun")
 }
