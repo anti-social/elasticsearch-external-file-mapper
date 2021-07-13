@@ -1,10 +1,9 @@
-import java.util.Date
-import com.carrotsearch.gradle.junit4.RandomizedTestingTask
 import org.elasticsearch.gradle.VersionProperties
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 buildscript {
-    val defaultEsVersion = "6.8.12"
+    // val defaultEsVersion = "6.8.12"
+    val defaultEsVersion = "7.13.3"
     val esVersion = if (hasProperty("esVersion")) {
         property("esVersion")
     } else {
@@ -52,8 +51,7 @@ repositories {
 }
 
 dependencies {
-    implementation(kotlin("stdlib-jdk8"))
-    runtime(kotlin("stdlib-jdk8"))
+    compile(kotlin("stdlib-jdk8"))
     compile("company.evo:persistent-hashmap")
     compile("commons-logging", "commons-logging", versions["commonslogging"])
 }
@@ -64,17 +62,17 @@ tasks.withType(KotlinCompile::class.java).all {
     }
 }
 
-// Have no idea how to fix this better, the fix needed from kotlin plugin >= 1.1.4
-tasks.withType(RandomizedTestingTask::class.java).all {
-    testClassesDirs = files(File(buildDir, "classes/kotlin/test"))
-  }
-
 tasks.register("listRepos") {
     doLast {
         println("Repositories:")
-        project.repositories.map{ it as MavenArtifactRepository }
-            .forEach{
-            println("Name: ${it.name}; url: ${it.url}")
-        }
+        project.repositories
+            .forEach{ repo ->
+                val repoUrl = when (repo) {
+                    is MavenArtifactRepository -> repo.url.toString()
+                    is IvyArtifactRepository -> repo.url.toString()
+                    else -> "???"
+                }
+                println("Name: ${repo.name}; url: $repoUrl")
+            }
     }
 }

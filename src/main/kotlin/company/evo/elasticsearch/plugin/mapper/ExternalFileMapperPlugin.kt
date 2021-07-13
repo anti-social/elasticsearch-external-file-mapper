@@ -18,7 +18,11 @@ package company.evo.elasticsearch.plugin.mapper
 
 import java.util.Collections
 
+import company.evo.elasticsearch.index.mapper.external.ExternalFileFieldMapper
+import company.evo.elasticsearch.indices.ExternalFileService
+
 import org.elasticsearch.client.Client
+import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.io.stream.NamedWriteableRegistry
 import org.elasticsearch.common.xcontent.NamedXContentRegistry
@@ -27,20 +31,20 @@ import org.elasticsearch.env.NodeEnvironment
 import org.elasticsearch.index.mapper.Mapper
 import org.elasticsearch.plugins.MapperPlugin
 import org.elasticsearch.plugins.Plugin
+import org.elasticsearch.repositories.RepositoriesService
 import org.elasticsearch.script.ScriptService
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.watcher.ResourceWatcherService
 
-import company.evo.elasticsearch.index.mapper.external.ExternalFileFieldMapper
-import company.evo.elasticsearch.indices.ExternalFileService
-
+import java.util.function.Supplier
 
 class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
 
     override fun getMappers(): Map<String, Mapper.TypeParser> {
         return Collections.singletonMap(
-                ExternalFileFieldMapper.CONTENT_TYPE,
-                ExternalFileFieldMapper.TypeParser())
+            ExternalFileFieldMapper.CONTENT_TYPE,
+            ExternalFileFieldMapper.PARSER
+        )
     }
 
     override fun createComponents(
@@ -52,7 +56,9 @@ class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
         xContentRegistry: NamedXContentRegistry,
         environment: Environment,
         nodeEnvironment: NodeEnvironment,
-        namedWriteableRegistry: NamedWriteableRegistry
+        namedWriteableRegistry: NamedWriteableRegistry,
+        indexNameExpressionResolver: IndexNameExpressionResolver,
+        repositoriesServiceSupplier: Supplier<RepositoriesService>
     ): MutableCollection<Any> {
         return mutableListOf(
             ExternalFileService(nodeEnvironment)
