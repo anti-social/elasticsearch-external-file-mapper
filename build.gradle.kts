@@ -3,7 +3,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 buildscript {
     // val defaultEsVersion = "6.8.12"
-    val defaultEsVersion = "7.13.3"
+    val defaultEsVersion = "7.13.4"
     val esVersion = if (hasProperty("esVersion")) {
         property("esVersion")
     } else {
