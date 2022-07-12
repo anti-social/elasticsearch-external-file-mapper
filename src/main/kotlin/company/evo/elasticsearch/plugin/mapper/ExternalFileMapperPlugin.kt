@@ -43,7 +43,7 @@ class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
     override fun getMappers(): Map<String, Mapper.TypeParser> {
         return Collections.singletonMap(
             ExternalFileFieldMapper.CONTENT_TYPE,
-            ExternalFileFieldMapper.PARSER
+            ExternalFileFieldMapper.TypeParser()
         )
     }
 

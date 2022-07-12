@@ -18,11 +18,17 @@ package company.evo.elasticsearch.index.mapper.external
 
 import company.evo.elasticsearch.indices.*
 
+import java.util.function.Supplier
+
+import org.apache.lucene.document.FieldType
+import org.apache.lucene.index.DocValuesType
+import org.apache.lucene.index.IndexOptions
 import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.index.SortedNumericDocValues
 import org.apache.lucene.search.Query
+import org.elasticsearch.cluster.metadata.IndexMetadata
+import org.elasticsearch.index.Index
 
-import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.index.fielddata.FieldData
 import org.elasticsearch.index.fielddata.IndexFieldData
 import org.elasticsearch.index.fielddata.IndexNumericFieldData
@@ -30,109 +36,131 @@ import org.elasticsearch.index.fielddata.LeafNumericFieldData
 import org.elasticsearch.index.fielddata.ScriptDocValues
 import org.elasticsearch.index.fielddata.SortedBinaryDocValues
 import org.elasticsearch.index.fielddata.SortedNumericDoubleValues
-import org.elasticsearch.index.mapper.ContentPath
 import org.elasticsearch.index.mapper.FieldMapper
 import org.elasticsearch.index.mapper.MappedFieldType
+import org.elasticsearch.index.mapper.Mapper
+import org.elasticsearch.index.mapper.MapperParsingException
 import org.elasticsearch.index.mapper.ParseContext
 import org.elasticsearch.index.mapper.TextSearchInfo
-import org.elasticsearch.index.mapper.ValueFetcher
+import org.elasticsearch.index.query.QueryShardContext
 import org.elasticsearch.index.query.QueryShardException
-import org.elasticsearch.index.query.SearchExecutionContext
+import org.elasticsearch.search.aggregations.support.CoreValuesSourceType
 import org.elasticsearch.search.aggregations.support.ValuesSourceType
 import org.elasticsearch.search.lookup.SearchLookup
 
-import java.util.function.Supplier
-import org.elasticsearch.index.mapper.MapperParsingException
-import org.elasticsearch.index.mapper.MappingLookup
-import org.elasticsearch.search.aggregations.support.CoreValuesSourceType
-
 class ExternalFileFieldMapper private constructor(
     simpleName: String,
-    fieldType: MappedFieldType,
+    fieldType: FieldType,
+    mappedFieldType: MappedFieldType,
     multiFields: MultiFields,
-    copyTo: CopyTo?,
-    builder: Builder
+    copyTo: CopyTo?
 ) : FieldMapper(
     simpleName,
     fieldType,
+    mappedFieldType,
     multiFields,
     copyTo
 ) {
-    private val hasDocValues: Boolean = builder.hasDocValues.get()
-    private val mapName: String = builder.mapName.get()
-    private val keyFieldName: String = builder.keyFieldName.get()
-    private val sharding: Boolean = builder.sharding.get()
-
     companion object {
         @JvmStatic
         val CONTENT_TYPE = "external_file"
 
         @JvmStatic
-        val PARSER = TypeParser { name, ctx ->
-            Builder(name, ctx.indexSettings)
+        val FIELD_TYPE = FieldType().apply {
+            setIndexOptions(IndexOptions.NONE)
+            setDocValuesType(DocValuesType.NONE)
         }
+    }
 
-        @JvmStatic
-        fun toType(mapper: FieldMapper): ExternalFileFieldMapper {
-            return mapper as ExternalFileFieldMapper
+    class TypeParser : Mapper.TypeParser {
+        override fun parse(
+                name: String,
+                node: MutableMap<String, Any?>,
+                parserContext: Mapper.TypeParser.ParserContext
+        ): Mapper.Builder<*> {
+            val builder = Builder(name)
+            val entries = node.entries.iterator()
+            for ((key, value) in entries) {
+                when (key) {
+                    "type" -> {}
+                    "key_field" -> {
+                        builder.keyFieldName = value?.toString()
+                        entries.remove()
+                    }
+                    "map_name" -> {
+                        builder.mapName = value?.toString()
+                        entries.remove()
+                    }
+                    "sharding" -> {
+                        val sharding = value?.toString()?.toBoolean()
+                        if (sharding != null) {
+                            builder.sharding = sharding
+                        }
+                        entries.remove()
+                    }
+                    "scaling_factor" -> {
+                        // Deprecated option: ignore it
+                        entries.remove()
+                    }
+                    else -> {
+                        throw MapperParsingException(
+                                "[$key] parameter cannot be modified for field [$name]"
+                        )
+                    }
+                }
+            }
+            if (builder.keyFieldName == null) {
+                throw MapperParsingException(
+                        "[key_field] parameter must be set for field [$name]"
+                )
+            }
+            if (builder.mapName == null) {
+                throw MapperParsingException(
+                        "[map_name] parameter must be set for field [$name]"
+                )
+            }
+            return builder
         }
     }
 
     class Builder(
-        name: String,
-        private val indexSettings: IndexSettings?
-    ) : FieldMapper.Builder(name) {
-        val mapName = Parameter.stringParam("map_name", true, { m -> toType(m).mapName }, "null")
-        val keyFieldName = Parameter.stringParam("key_field", true, { m -> toType(m).keyFieldName }, null)
-        val sharding = Parameter.boolParam("sharding", true, { m -> toType(m).sharding }, false)
+        name: String
+    ) : FieldMapper.Builder<Builder>(name, FIELD_TYPE) {
+        var mapName: String? = null
+        var keyFieldName: String? = null
+        var sharding: Boolean = false
 
-        val hasDocValues = Parameter.docValuesParam({ m -> toType(m).hasDocValues }, true)
+        override fun build(builderContext: BuilderContext): ExternalFileFieldMapper {
+            val indexSettings = builderContext.indexSettings()
+            val indexName = indexSettings.get(IndexMetadata.SETTING_INDEX_PROVIDED_NAME)
+            val indexUuid = indexSettings.get(IndexMetadata.SETTING_INDEX_UUID)
+            val numShards = indexSettings.get(IndexMetadata.SETTING_NUMBER_OF_SHARDS).toInt()
 
-        // Ignored, but keep it to work with old indexes
-        val scalingFactor = Parameter.floatParam("scaling_factor", true, { 0.0F }, 0.0F)
-
-        override fun getParameters(): MutableList<Parameter<*>> {
-            return mutableListOf(hasDocValues, mapName, keyFieldName, sharding, scalingFactor)
-        }
-
-        override fun build(contentPath: ContentPath): ExternalFileFieldMapper {
-            val indexMetadata = indexSettings?.indexMetadata
-            val indexName = indexMetadata?.index?.name
-            val indexUuid = indexMetadata?.indexUUID
-            val numShards = indexMetadata?.numberOfShards
+            val mapName = mapName ?: throw IllegalStateException("mapName property is required")
+            val keyFieldName = keyFieldName ?: throw IllegalStateException("keyFieldName property is required")
 
             // There is no index when putting template
-            if (indexName != null && indexUuid != null && numShards != null) {
+            if (indexName != null && indexUuid != null) {
                 ExternalFileService.instance.addFile(
                     indexName,
                     name,
-                    mapName.get(),
-                    sharding.get(),
+                    mapName,
+                    sharding,
                     numShards
                 )
             }
 
             return ExternalFileFieldMapper(
                 name,
+                fieldType,
                 ExternalFileFieldType(
-                    buildFullName(contentPath),
-                    mapName.get(), keyFieldName.get(), sharding.get()
+                    name, mapName, keyFieldName, sharding
                 ),
-                multiFieldsBuilder.build(this, contentPath),
-                copyTo.build(),
-                this
+                multiFieldsBuilder.build(this, builderContext),
+                copyTo
+                // this
             )
         }
-    }
-
-    override fun doValidate(mappers: MappingLookup) {
-        if (!hasDocValues) {
-            throw MapperParsingException(
-                "[doc_values] parameter cannot be modified for field [${name()}]"
-            )
-        }
-        mappers.getFieldType(keyFieldName)
-            ?: throw MapperParsingException("[$keyFieldName] field not found")
     }
 
     override fun contentType() : String {
@@ -143,8 +171,14 @@ class ExternalFileFieldMapper private constructor(
         // Just ignore field values
     }
 
-    override fun getMergeBuilder(): FieldMapper.Builder {
-        return Builder(simpleName(), null).init(this)
+    override fun mergeOptions(other: FieldMapper, conflicts: MutableList<String>) {
+        // All options are allowed to be changed
+        val otherField = other as ExternalFileFieldMapper
+        if (!otherField.fieldType().hasDocValues()) {
+            conflicts.add(
+                "[doc_values] parameter cannot be modified for field [${name()}]"
+            )
+        }
     }
 
     class ExternalFileFieldType(
@@ -152,46 +186,41 @@ class ExternalFileFieldMapper private constructor(
         private val mapName: String,
         private val keyFieldName: String,
         private val sharding: Boolean
-    ) : MappedFieldType(name, false, false, true, TextSearchInfo.NONE, emptyMap()) {
+    ) : MappedFieldType(name, false, false, TextSearchInfo.NONE, emptyMap()) {
 
         override fun typeName(): String {
             return CONTENT_TYPE
         }
 
-        override fun termQuery(value: Any, context: SearchExecutionContext): Query {
+        override fun termQuery(value: Any, context: QueryShardContext?): Query {
             throw QueryShardException(
                     context,
                     "ExternalFile field type does not support search queries"
             )
         }
 
-        override fun existsQuery(context: SearchExecutionContext): Query {
+        override fun existsQuery(context: QueryShardContext): Query {
             throw QueryShardException(
                     context,
                     "ExternalField field type does not support exists queries"
             )
         }
 
-        override fun valueFetcher(context: SearchExecutionContext, format: String?): ValueFetcher {
-            return ValueFetcher {
-                emptyList()
-            }
-        }
-
         override fun fielddataBuilder(
             fullyQualifiedIndexName: String,
             searchLookupSupplier: Supplier<SearchLookup>
         ): IndexFieldData.Builder {
-            return IndexFieldData.Builder { cache, breakerService ->
+            return IndexFieldData.Builder { indexSettings, _, cache, breakerService, mapperService ->
+                val keyFieldType = mapperService.fieldType(keyFieldName)
                 val searchLookup = searchLookupSupplier.get()
                 val shardId: Int = searchLookup.shardId()
-                val keyFieldType = searchLookup.fieldType(keyFieldName)
                 val keyFieldData = keyFieldType
                     .fielddataBuilder(fullyQualifiedIndexName, searchLookupSupplier)
-                    .build(cache, breakerService) as? IndexNumericFieldData
+                    .build(indexSettings, keyFieldType, cache, breakerService, mapperService) as? IndexNumericFieldData
                     ?: throw IllegalStateException("[$keyFieldName] field must be numeric")
                 ExternalFileFieldData(
                     name(),
+                    indexSettings.index,
                     keyFieldData,
                     ExternalFileService.instance.getValues(mapName, if (sharding) shardId else null)
                 )
@@ -200,9 +229,10 @@ class ExternalFileFieldMapper private constructor(
     }
 
     class ExternalFileFieldData(
-            private val fieldName: String,
-            private val keyFieldData: IndexNumericFieldData,
-            private val values: FileValues
+        private val fieldName: String,
+        private val index: Index,
+        private val keyFieldData: IndexNumericFieldData,
+        private val values: FileValues
     ) : IndexNumericFieldData() {
 
         companion object {
@@ -265,6 +295,10 @@ class ExternalFileFieldMapper private constructor(
             override fun close() {}
         }
 
+        override fun index(): Index {
+            return index
+        }
+
         override fun getValuesSourceType(): ValuesSourceType {
             return CoreValuesSourceType.NUMERIC
         }
@@ -288,5 +322,7 @@ class ExternalFileFieldMapper private constructor(
         override fun loadDirect(ctx: LeafReaderContext): LeafNumericFieldData {
             return load(ctx)
         }
+
+        override fun clear() {}
     }
 }

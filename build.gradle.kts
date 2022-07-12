@@ -2,7 +2,7 @@ import java.nio.file.Paths
 
 buildscript {
     // val defaultEsVersion = "6.8.12"
-    val defaultEsVersion = "7.13.4"
+    val defaultEsVersion = "7.9.3"
     val esVersion = if (hasProperty("esVersion")) {
         property("esVersion")
     } else {
