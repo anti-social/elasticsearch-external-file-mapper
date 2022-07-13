@@ -18,17 +18,15 @@ package company.evo.elasticsearch.index.mapper.external
 
 import company.evo.elasticsearch.indices.*
 
-import java.util.function.Supplier
-
 import org.apache.lucene.document.FieldType
 import org.apache.lucene.index.DocValuesType
 import org.apache.lucene.index.IndexOptions
 import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.index.SortedNumericDocValues
 import org.apache.lucene.search.Query
+
 import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.index.Index
-
 import org.elasticsearch.index.fielddata.FieldData
 import org.elasticsearch.index.fielddata.IndexFieldData
 import org.elasticsearch.index.fielddata.IndexNumericFieldData
@@ -48,19 +46,26 @@ import org.elasticsearch.search.aggregations.support.CoreValuesSourceType
 import org.elasticsearch.search.aggregations.support.ValuesSourceType
 import org.elasticsearch.search.lookup.SearchLookup
 
+import java.util.function.Supplier
+import org.elasticsearch.index.mapper.ParametrizedFieldMapper
+
 class ExternalFileFieldMapper private constructor(
     simpleName: String,
-    fieldType: FieldType,
     mappedFieldType: MappedFieldType,
     multiFields: MultiFields,
-    copyTo: CopyTo?
-) : FieldMapper(
+    copyTo: CopyTo?,
+    builder: Builder
+) : ParametrizedFieldMapper(
     simpleName,
-    fieldType,
     mappedFieldType,
     multiFields,
     copyTo
 ) {
+    private val hasDocValues: Boolean = builder.hasDocValues.value
+    private val mapName: String = builder.mapName.value
+    private val keyFieldName: String = builder.keyFieldName.value
+    private val sharding: Boolean = builder.sharding.value
+
     companion object {
         @JvmStatic
         val CONTENT_TYPE = "external_file"
@@ -71,90 +76,22 @@ class ExternalFileFieldMapper private constructor(
             setDocValuesType(DocValuesType.NONE)
             freeze()
         }
+
+        @JvmStatic
+        fun toType(fieldMapper: FieldMapper): ExternalFileFieldMapper {
+            return fieldMapper as ExternalFileFieldMapper
+        }
     }
 
     class TypeParser : Mapper.TypeParser {
         override fun parse(
-                name: String,
-                node: MutableMap<String, Any?>,
-                parserContext: Mapper.TypeParser.ParserContext
+            name: String,
+            node: MutableMap<String, Any?>,
+            parserContext: Mapper.TypeParser.ParserContext
         ): Mapper.Builder<*> {
-            val builder = Builder(name)
-            val entries = node.entries.iterator()
-            for ((key, value) in entries) {
-                when (key) {
-                    "type" -> {}
-                    "key_field" -> {
-                        builder.keyFieldName = value?.toString()
-                        entries.remove()
-                    }
-                    "map_name" -> {
-                        builder.mapName = value?.toString()
-                        entries.remove()
-                    }
-                    "sharding" -> {
-                        val sharding = value?.toString()?.toBoolean()
-                        if (sharding != null) {
-                            builder.sharding = sharding
-                        }
-                        entries.remove()
-                    }
-                    "scaling_factor" -> {
-                        // Deprecated option: ignore it
-                        entries.remove()
-                    }
-                }
+            return Builder(name).apply {
+                parse(name, parserContext, node)
             }
-            if (builder.keyFieldName == null) {
-                throw MapperParsingException(
-                        "[key_field] parameter must be set for field [$name]"
-                )
-            }
-            if (builder.mapName == null) {
-                throw MapperParsingException(
-                        "[map_name] parameter must be set for field [$name]"
-                )
-            }
-            return builder
-        }
-    }
-
-    class Builder(
-        name: String
-    ) : FieldMapper.Builder<Builder>(name, FIELD_TYPE) {
-        var mapName: String? = null
-        var keyFieldName: String? = null
-        var sharding: Boolean = false
-
-        override fun build(builderContext: BuilderContext): ExternalFileFieldMapper {
-            val indexSettings = builderContext.indexSettings()
-            val indexName = indexSettings.get(IndexMetadata.SETTING_INDEX_PROVIDED_NAME)
-            val indexUuid = indexSettings.get(IndexMetadata.SETTING_INDEX_UUID)
-            val numShards = indexSettings.get(IndexMetadata.SETTING_NUMBER_OF_SHARDS).toInt()
-
-            val mapName = mapName ?: throw IllegalStateException("mapName property is required")
-            val keyFieldName = keyFieldName ?: throw IllegalStateException("keyFieldName property is required")
-
-            // There is no index when putting template
-            if (indexName != null && indexUuid != null) {
-                ExternalFileService.instance.addFile(
-                    indexName,
-                    name,
-                    mapName,
-                    sharding,
-                    numShards
-                )
-            }
-
-            return ExternalFileFieldMapper(
-                name,
-                fieldType,
-                ExternalFileFieldType(
-                    name, mapName, keyFieldName, sharding
-                ),
-                multiFieldsBuilder.build(this, builderContext),
-                copyTo
-            )
         }
     }
 
@@ -166,8 +103,63 @@ class ExternalFileFieldMapper private constructor(
         // Just ignore field values
     }
 
-    override fun mergeOptions(other: FieldMapper, conflicts: MutableList<String>) {
-        // All options are allowed to be changed
+    override fun getMergeBuilder(): ParametrizedFieldMapper.Builder {
+        return Builder(simpleName()).init(this)
+    }
+
+    class Builder(
+        name: String
+    ) : ParametrizedFieldMapper.Builder(name) {
+        val mapName: Parameter<String> = Parameter.stringParam(
+            "map_name", true, { m -> toType(m).mapName }, null
+        )
+        val keyFieldName: Parameter<String> = Parameter.stringParam(
+            "key_field", true, { m -> toType(m).keyFieldName }, null
+        )
+        val sharding: Parameter<Boolean> = Parameter.boolParam(
+            "sharding", true, { m -> toType(m).sharding }, false
+        )
+
+        val hasDocValues: Parameter<Boolean> = Parameter.boolParam(
+            "doc_values", false, { m -> toType(m).hasDocValues }, true
+        )
+
+        // Ignored, but keep it to work with old indexes
+        val scalingFactor: Parameter<Float> = Parameter.floatParam(
+            "scaling_factor", true, { 0.0F }, 0.0F
+        )
+
+        override fun getParameters(): MutableList<Parameter<*>> {
+            return mutableListOf(hasDocValues, mapName, keyFieldName, sharding, scalingFactor)
+        }
+
+        override fun build(builderContext: BuilderContext): ExternalFileFieldMapper {
+            val indexSettings = builderContext.indexSettings()
+            val indexName = indexSettings.get(IndexMetadata.SETTING_INDEX_PROVIDED_NAME)
+            val indexUuid = indexSettings.get(IndexMetadata.SETTING_INDEX_UUID)
+            val numShards = indexSettings.get(IndexMetadata.SETTING_NUMBER_OF_SHARDS).toInt()
+
+            // There is no index when putting template
+            if (indexName != null && indexUuid != null) {
+                ExternalFileService.instance.addFile(
+                    indexName,
+                    name,
+                    mapName.value,
+                    sharding.value,
+                    numShards
+                )
+            }
+
+            return ExternalFileFieldMapper(
+                name,
+                ExternalFileFieldType(
+                    name, mapName.value, keyFieldName.value, sharding.value
+                ),
+                multiFieldsBuilder.build(this, builderContext),
+                copyTo.build(),
+                this
+            )
+        }
     }
 
     class ExternalFileFieldType(
