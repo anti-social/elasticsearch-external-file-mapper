@@ -69,6 +69,7 @@ class ExternalFileFieldMapper private constructor(
         val FIELD_TYPE = FieldType().apply {
             setIndexOptions(IndexOptions.NONE)
             setDocValuesType(DocValuesType.NONE)
+            freeze()
         }
     }
 
@@ -101,11 +102,6 @@ class ExternalFileFieldMapper private constructor(
                     "scaling_factor" -> {
                         // Deprecated option: ignore it
                         entries.remove()
-                    }
-                    else -> {
-                        throw MapperParsingException(
-                                "[$key] parameter cannot be modified for field [$name]"
-                        )
                     }
                 }
             }
@@ -158,7 +154,6 @@ class ExternalFileFieldMapper private constructor(
                 ),
                 multiFieldsBuilder.build(this, builderContext),
                 copyTo
-                // this
             )
         }
     }
@@ -173,12 +168,6 @@ class ExternalFileFieldMapper private constructor(
 
     override fun mergeOptions(other: FieldMapper, conflicts: MutableList<String>) {
         // All options are allowed to be changed
-        val otherField = other as ExternalFileFieldMapper
-        if (!otherField.fieldType().hasDocValues()) {
-            conflicts.add(
-                "[doc_values] parameter cannot be modified for field [${name()}]"
-            )
-        }
     }
 
     class ExternalFileFieldType(
