@@ -389,15 +389,6 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
 
         indexTestDocuments(indexName)
 
-        val baseExtFileDir = ExternalFileService.instance.getExternalFileDir("ext_price")
-            .also { println(">>> !!! Ext file dir: $it") }
-        println(baseExtFileDir.toFile().exists())
-        if (baseExtFileDir.toFile().exists()) {
-            for (f in baseExtFileDir.toFile().list()) {
-                println(f)
-            }
-        }
-
         assertHits(search(), listOf("1" to 0.0F, "2" to 0.0F, "3" to 0.0F, "4" to 0.0F))
 
         initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))

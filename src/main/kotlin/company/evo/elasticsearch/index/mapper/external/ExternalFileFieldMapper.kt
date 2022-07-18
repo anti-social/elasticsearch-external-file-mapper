@@ -18,14 +18,10 @@ package company.evo.elasticsearch.index.mapper.external
 
 import company.evo.elasticsearch.indices.*
 
-import org.apache.lucene.document.FieldType
-import org.apache.lucene.index.DocValuesType
-import org.apache.lucene.index.IndexOptions
 import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.index.SortedNumericDocValues
 import org.apache.lucene.search.Query
 
-import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.index.Index
 import org.elasticsearch.index.fielddata.FieldData
 import org.elasticsearch.index.fielddata.IndexFieldData
@@ -34,10 +30,11 @@ import org.elasticsearch.index.fielddata.LeafNumericFieldData
 import org.elasticsearch.index.fielddata.ScriptDocValues
 import org.elasticsearch.index.fielddata.SortedBinaryDocValues
 import org.elasticsearch.index.fielddata.SortedNumericDoubleValues
+import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.index.mapper.FieldMapper
 import org.elasticsearch.index.mapper.MappedFieldType
 import org.elasticsearch.index.mapper.Mapper
-import org.elasticsearch.index.mapper.MapperParsingException
+import org.elasticsearch.index.mapper.ParametrizedFieldMapper
 import org.elasticsearch.index.mapper.ParseContext
 import org.elasticsearch.index.mapper.TextSearchInfo
 import org.elasticsearch.index.query.QueryShardContext
@@ -47,7 +44,6 @@ import org.elasticsearch.search.aggregations.support.ValuesSourceType
 import org.elasticsearch.search.lookup.SearchLookup
 
 import java.util.function.Supplier
-import org.elasticsearch.index.mapper.ParametrizedFieldMapper
 
 class ExternalFileFieldMapper private constructor(
     simpleName: String,
@@ -61,7 +57,6 @@ class ExternalFileFieldMapper private constructor(
     multiFields,
     copyTo
 ) {
-    private val hasDocValues: Boolean = builder.hasDocValues.value
     private val mapName: String = builder.mapName.value
     private val keyFieldName: String = builder.keyFieldName.value
     private val sharding: Boolean = builder.sharding.value
@@ -71,14 +66,7 @@ class ExternalFileFieldMapper private constructor(
         val CONTENT_TYPE = "external_file"
 
         @JvmStatic
-        val FIELD_TYPE = FieldType().apply {
-            setIndexOptions(IndexOptions.NONE)
-            setDocValuesType(DocValuesType.NONE)
-            freeze()
-        }
-
-        @JvmStatic
-        fun toType(fieldMapper: FieldMapper): ExternalFileFieldMapper {
+        private fun toType(fieldMapper: FieldMapper): ExternalFileFieldMapper {
             return fieldMapper as ExternalFileFieldMapper
         }
     }
@@ -89,7 +77,12 @@ class ExternalFileFieldMapper private constructor(
             node: MutableMap<String, Any?>,
             parserContext: Mapper.TypeParser.ParserContext
         ): Mapper.Builder<*> {
-            return Builder(name).apply {
+            val queryShardContext = try {
+                parserContext.queryShardContextSupplier().get()
+            } catch (e: java.lang.UnsupportedOperationException) {
+                null
+            }
+            return Builder(name, queryShardContext?.indexSettings).apply {
                 parse(name, parserContext, node)
             }
         }
@@ -104,11 +97,12 @@ class ExternalFileFieldMapper private constructor(
     }
 
     override fun getMergeBuilder(): ParametrizedFieldMapper.Builder {
-        return Builder(simpleName()).init(this)
+        return Builder(simpleName(), null).init(this)
     }
 
     class Builder(
-        name: String
+        name: String,
+        private val indexSettings: IndexSettings?
     ) : ParametrizedFieldMapper.Builder(name) {
         val mapName: Parameter<String> = Parameter.stringParam(
             "map_name", true, { m -> toType(m).mapName }, null
@@ -120,9 +114,9 @@ class ExternalFileFieldMapper private constructor(
             "sharding", true, { m -> toType(m).sharding }, false
         )
 
-        val hasDocValues: Parameter<Boolean> = Parameter.boolParam(
-            "doc_values", false, { m -> toType(m).hasDocValues }, true
-        )
+        // val hasDocValues: Parameter<Boolean> = Parameter.boolParam(
+        //     "doc_values", false, { m -> toType(m).hasDocValues }, true
+        // )
 
         // Ignored, but keep it to work with old indexes
         val scalingFactor: Parameter<Float> = Parameter.floatParam(
@@ -130,20 +124,19 @@ class ExternalFileFieldMapper private constructor(
         )
 
         override fun getParameters(): MutableList<Parameter<*>> {
-            return mutableListOf(hasDocValues, mapName, keyFieldName, sharding, scalingFactor)
+            return mutableListOf(mapName, keyFieldName, sharding, scalingFactor)
         }
 
-        override fun build(builderContext: BuilderContext): ExternalFileFieldMapper {
-            val indexSettings = builderContext.indexSettings()
-            val indexName = indexSettings.get(IndexMetadata.SETTING_INDEX_PROVIDED_NAME)
-            val indexUuid = indexSettings.get(IndexMetadata.SETTING_INDEX_UUID)
-            val numShards = indexSettings.get(IndexMetadata.SETTING_NUMBER_OF_SHARDS).toInt()
+        override fun build(context: BuilderContext): ExternalFileFieldMapper {
+            val fullFieldName = buildFullName(context)
 
-            // There is no index when putting template
-            if (indexName != null && indexUuid != null) {
+            // There is no index when putting a template or cloning from another one
+            if (indexSettings != null) {
+                val indexName = indexSettings.index.name
+                val numShards = indexSettings.indexMetadata.numberOfShards
                 ExternalFileService.instance.addFile(
                     indexName,
-                    name,
+                    fullFieldName,
                     mapName.value,
                     sharding.value,
                     numShards
@@ -153,9 +146,9 @@ class ExternalFileFieldMapper private constructor(
             return ExternalFileFieldMapper(
                 name,
                 ExternalFileFieldType(
-                    name, mapName.value, keyFieldName.value, sharding.value
+                    fullFieldName, mapName.value, keyFieldName.value, sharding.value
                 ),
-                multiFieldsBuilder.build(this, builderContext),
+                multiFieldsBuilder.build(this, context),
                 copyTo.build(),
                 this
             )
