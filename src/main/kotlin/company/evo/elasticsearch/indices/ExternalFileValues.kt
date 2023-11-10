@@ -1,13 +1,12 @@
 package company.evo.elasticsearch.indices
 
-import company.evo.persistent.hashmap.Hasher_Int
-import company.evo.persistent.hashmap.HasherProvider_Int
+import company.evo.persistent.hashmap.HasherProvider_Long
+import company.evo.persistent.hashmap.Hasher_Long
 import company.evo.persistent.hashmap.straight.StraightHashMapEnv
 import company.evo.persistent.hashmap.straight.StraightHashMapROEnv
-import company.evo.persistent.hashmap.straight.StraightHashMap_Int_Float
-import company.evo.persistent.hashmap.straight.StraightHashMapRO_Int_Float
-import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
-
+import company.evo.persistent.hashmap.straight.StraightHashMapRO_Long_Float
+import company.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
+import company.evo.persistent.hashmap.straight.StraightHashMap_Long_Float
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -20,6 +19,7 @@ interface FileValues {
         val sizeBytes: Long
         fun getValues(shardId: Int?): FileValues
     }
+
     fun get(key: Long, defaultValue: Double): Double
     fun contains(key: Long): Boolean
 }
@@ -34,20 +34,20 @@ object EmptyFileValues : FileValues {
     }
 }
 
-typealias StraightHashMapROEnv_Int_Float = StraightHashMapROEnv<
-        HasherProvider_Int,
-        Hasher_Int,
-        StraightHashMap_Int_Float,
-        StraightHashMapRO_Int_Float
->
+typealias StraightHashMapROEnv_Long_Float = StraightHashMapROEnv<
+    HasherProvider_Long,
+    Hasher_Long,
+    StraightHashMap_Long_Float,
+    StraightHashMapRO_Long_Float
+    >
 
 class IntDoubleFileValues(
-        private val map: StraightHashMapRO_Int_Float
+    private val map: StraightHashMapRO_Long_Float
 ) : FileValues {
 
     class Provider(override val dir: Path, override val sharding: Boolean, override val numShards: Int) : FileValues.Provider {
-        private val mapEnvs: Array<AtomicReference<StraightHashMapROEnv_Int_Float?>> = Array(numShards) {
-            AtomicReference<StraightHashMapROEnv_Int_Float?>(null)
+        private val mapEnvs: Array<AtomicReference<StraightHashMapROEnv_Long_Float?>> = Array(numShards) {
+            AtomicReference<StraightHashMapROEnv_Long_Float?>(null)
         }
 
         override fun equals(other: Any?): Boolean {
@@ -68,7 +68,7 @@ class IntDoubleFileValues(
                     } else {
                         dir
                     }
-                    val newEnv = StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
+                    val newEnv = StraightHashMapEnv.Builder(StraightHashMapType_Long_Float)
                             .useUnmapHack(true)
                             .openReadOnly(mapDir)
                     if (!mapEnv.compareAndSet(null, newEnv)) {
@@ -94,7 +94,7 @@ class IntDoubleFileValues(
         if (key > Int.MAX_VALUE) {
             return defaultValue
         }
-        val v = map.get(key.toInt(), Float.NaN)
+        val v = map.get(key, Float.NaN)
         if (v.isNaN()) {
             return defaultValue
         }
@@ -102,7 +102,7 @@ class IntDoubleFileValues(
     }
 
     override fun contains(key: Long): Boolean {
-        return map.contains(key.toInt())
+        return map.contains(key)
     }
 }
 
