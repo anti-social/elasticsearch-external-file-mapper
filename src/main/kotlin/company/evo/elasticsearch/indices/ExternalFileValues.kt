@@ -1,13 +1,12 @@
 package company.evo.elasticsearch.indices
 
-import company.evo.persistent.hashmap.Hasher_Int
-import company.evo.persistent.hashmap.HasherProvider_Int
+import company.evo.persistent.hashmap.HasherProvider_Long
+import company.evo.persistent.hashmap.Hasher_Long
 import company.evo.persistent.hashmap.straight.StraightHashMapEnv
 import company.evo.persistent.hashmap.straight.StraightHashMapROEnv
-import company.evo.persistent.hashmap.straight.StraightHashMap_Int_Float
-import company.evo.persistent.hashmap.straight.StraightHashMapRO_Int_Float
-import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
-
+import company.evo.persistent.hashmap.straight.StraightHashMapRO_Long_Float
+import company.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
+import company.evo.persistent.hashmap.straight.StraightHashMap_Long_Float
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 
@@ -16,6 +15,7 @@ interface FileValues {
         val sizeBytes: Long
         fun getValues(): FileValues
     }
+
     fun get(key: Long, defaultValue: Double): Double
     fun contains(key: Long): Boolean
 }
@@ -30,19 +30,19 @@ object EmptyFileValues : FileValues {
     }
 }
 
-typealias StraightHashMapROEnv_Int_Float = StraightHashMapROEnv<
-        HasherProvider_Int,
-        Hasher_Int,
-        StraightHashMap_Int_Float,
-        StraightHashMapRO_Int_Float
->
+typealias StraightHashMapROEnv_Long_Float = StraightHashMapROEnv<
+    HasherProvider_Long,
+    Hasher_Long,
+    StraightHashMap_Long_Float,
+    StraightHashMapRO_Long_Float
+    >
 
 class IntDoubleFileValues(
-        private val map: StraightHashMapRO_Int_Float
+    private val map: StraightHashMapRO_Long_Float
 ) : FileValues {
 
     class Provider(private val dir: Path) : FileValues.Provider {
-        private val mapEnv: AtomicReference<StraightHashMapROEnv_Int_Float?> = AtomicReference(null)
+        private val mapEnv: AtomicReference<StraightHashMapROEnv_Long_Float?> = AtomicReference(null)
 
         override val sizeBytes: Long
             get() = TODO("not implemented")
@@ -51,9 +51,9 @@ class IntDoubleFileValues(
             var env = mapEnv.get()
             if (env == null) {
                 try {
-                    val newEnv = StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
-                            .useUnmapHack(true)
-                            .openReadOnly(dir)
+                    val newEnv = StraightHashMapEnv.Builder(StraightHashMapType_Long_Float)
+                        .useUnmapHack(true)
+                        .openReadOnly(dir)
                     if (!mapEnv.compareAndSet(null, newEnv)) {
                         // Another thread already have set an environment
                         newEnv.close()
@@ -75,7 +75,7 @@ class IntDoubleFileValues(
         if (key > Int.MAX_VALUE) {
             return defaultValue
         }
-        val v = map.get(key.toInt(), Float.NaN)
+        val v = map.get(key, Float.NaN)
         if (v.isNaN()) {
             return defaultValue
         }
@@ -83,7 +83,7 @@ class IntDoubleFileValues(
     }
 
     override fun contains(key: Long): Boolean {
-        return map.contains(key.toInt())
+        return map.contains(key)
     }
 }
 
