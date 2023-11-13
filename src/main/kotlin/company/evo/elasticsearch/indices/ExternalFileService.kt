@@ -88,7 +88,7 @@ class ExternalFileService internal constructor(
             ) {
                 logger.info("Adding external file field: {index=$indexName, field=$fieldName, path=$extDir, sharding=$sharding, numShards=$numShards}")
                 v?.release()
-                AtomicRefCounted(IntDoubleFileValues.Provider(extDir, sharding, numShards)) { it.close() }
+                AtomicRefCounted(LongDoubleFileValues.Provider(extDir, sharding, numShards)) { it.close() }
             } else {
                 v
             }

@@ -41,7 +41,7 @@ typealias StraightHashMapROEnv_Long_Float = StraightHashMapROEnv<
     StraightHashMapRO_Long_Float
     >
 
-class IntDoubleFileValues(
+class LongDoubleFileValues(
     private val map: StraightHashMapRO_Long_Float
 ) : FileValues {
 
@@ -80,7 +80,7 @@ class IntDoubleFileValues(
                     return EmptyFileValues
                 }
             }
-            return IntDoubleFileValues(env.getCurrentMap())
+            return LongDoubleFileValues(env.getCurrentMap())
         }
 
         override fun close() {
