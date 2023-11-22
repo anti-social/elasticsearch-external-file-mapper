@@ -38,7 +38,7 @@ class ExternalFileService internal constructor(
         ?: throw IllegalStateException(
             "${Environment.PATH_SHARED_DATA_SETTING} setting must be specified"
         )
-    private val mapFileProviders = ConcurrentHashMap<String, RefCounted<FileValues.Provider>>()
+    private val mapFileProviders = ConcurrentHashMap<String, RefCounted<ExternalFileValues.Provider>>()
 
     companion object {
         const val EXTERNAL_DIR_NAME = "external_files"
@@ -88,20 +88,20 @@ class ExternalFileService internal constructor(
             ) {
                 logger.info("Adding external file field: {index=$indexName, field=$fieldName, path=$extDir, sharding=$sharding, numShards=$numShards}")
                 v?.release()
-                AtomicRefCounted(LongDoubleFileValues.Provider(extDir, sharding, numShards)) { it.close() }
+                AtomicRefCounted(ExternalFileValues.Provider(extDir, sharding, numShards)) { it.close() }
             } else {
                 v
             }
         }
     }
 
-    fun getValues(mapName: String, shardId: Int?): FileValues {
+    fun getValues(mapName: String, keyType: ExternalFieldKeyType, shardId: Int?): ExternalFileValues {
         repeat(100) {
             val v = mapFileProviders[mapName] ?: return EmptyFileValues
             val valuesProvider = v.retain()
             if (valuesProvider != null) {
                 try {
-                    return valuesProvider.getValues(shardId)
+                    return valuesProvider.getValues(keyType, shardId)
                 } finally {
                     v.release()
                 }

@@ -186,6 +186,16 @@ class ExternalFileFieldMapper private constructor(
         ): IndexFieldData.Builder {
             return IndexFieldData.Builder { indexSettings, _, cache, breakerService, mapperService ->
                 val keyFieldType = mapperService.fieldType(keyFieldName)
+                val externalFieldKeyType = when (keyFieldType.typeName()) {
+                    "integer" -> ExternalFieldKeyType.INT
+                    "long" -> ExternalFieldKeyType.LONG
+                    else -> {
+                        throw IllegalStateException(
+                            "Unsupported field type for [$keyFieldName] field: ${keyFieldType.typeName()}. " +
+                                "Supported types: integer, long"
+                        )
+                    }
+                }
                 val searchLookup = searchLookupSupplier.get()
                 val shardId: Int = searchLookup.shardId()
                 val keyFieldData = keyFieldType
@@ -196,7 +206,7 @@ class ExternalFileFieldMapper private constructor(
                     name(),
                     indexSettings.index,
                     keyFieldData,
-                    ExternalFileService.instance.getValues(mapName, if (sharding) shardId else null)
+                    ExternalFileService.instance.getValues(mapName, externalFieldKeyType, if (sharding) shardId else null)
                 )
             }
         }
@@ -206,7 +216,7 @@ class ExternalFileFieldMapper private constructor(
         private val fieldName: String,
         private val index: Index,
         private val keyFieldData: IndexNumericFieldData,
-        private val values: FileValues
+        private val values: ExternalFileValues
     ) : IndexNumericFieldData() {
 
         companion object {
@@ -214,12 +224,12 @@ class ExternalFileFieldMapper private constructor(
         }
 
         class AtomicNumericKeyFieldData(
-                private val values: FileValues,
+                private val values: ExternalFileValues,
                 private val keyFieldData: LeafNumericFieldData
         ) : LeafNumericFieldData {
 
             class Values(
-                    private val values: FileValues,
+                    private val values: ExternalFileValues,
                     private val keys: SortedNumericDocValues
             ) : SortedNumericDoubleValues() {
 
