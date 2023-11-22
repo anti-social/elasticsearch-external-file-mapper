@@ -22,6 +22,7 @@ import company.evo.elasticsearch.indices.ExternalFileService
 import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
 import company.evo.persistent.hashmap.straight.StraightHashMapEnv
 import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
+import company.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
 
 import org.elasticsearch.action.search.SearchResponse
 import org.elasticsearch.client.Requests.searchRequest
@@ -110,6 +111,31 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         }
     }
 
+    private fun initMapLongFloat(name: String, numShards: Int? = null, entries: Map<Long, Float>? = null) {
+        val baseExtFileDir = ExternalFileService.instance.getExternalFileDir(name)
+        val envs = (0 until (numShards ?: 1)).map { shardId ->
+            val extFileDir = if (numShards != null) {
+                baseExtFileDir.resolve(shardId.toString())
+            } else {
+                baseExtFileDir
+            }
+            StraightHashMapEnv.Builder(StraightHashMapType_Long_Float)
+                .useUnmapHack(true)
+                .open(extFileDir.also { Files.createDirectories(it) })
+        }
+        if (entries != null) {
+            envs.use { mapEnvs ->
+                mapEnvs.map { it.openMap() }.use { maps ->
+                    entries.forEach { (k , v) ->
+                        val shardId = Math.floorMod(Murmur3HashFunction.hash(k.toString()), numShards ?: 1)
+                        val map = maps[shardId]
+                        map.put(k, v)
+                    }
+                }
+            }
+        }
+    }
+
     fun testDefaults() {
         val indexName = "test"
         initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
@@ -147,6 +173,47 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         assertThat(extPriceField.size, equalTo(3))
 
         indexTestDocuments(indexName)
+
+        assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
+    }
+
+    fun testLongKey() {
+        val indexName = "test"
+        initMapLongFloat("ext_price", null, mapOf(1L to 1.1F, 2L to 1.2F, Int.MAX_VALUE.toLong() + 1L to 1.3F))
+
+        val mapping = jsonBuilder().obj {
+            obj("product") {
+                obj("properties") {
+                    obj("id") {
+                        field("type", "long")
+                    }
+                    obj("name") {
+                        field("type", "text")
+                    }
+                    obj("ext_price") {
+                        field("type", "external_file")
+                        field("key_field", "id")
+                        field("map_name", "ext_price")
+                    }
+                }
+            }
+        }
+        createIndex(indexName, 1, "product", mapping)
+
+        val mappingsResponse = client().admin()
+            .indices()
+            .prepareGetMappings(indexName)
+            .get()
+        val productMapping = mappingsResponse.mappings()["test"]["product"]
+        assertThat(productMapping.type(), equalTo("product"))
+        val productFields = productMapping.sourceAsMap()["properties"] as Map<*, *>
+        val extPriceField = productFields["ext_price"] as Map<*, *>
+        assertThat(extPriceField["type"] as String, equalTo("external_file"))
+        assertThat(extPriceField["key_field"] as String, equalTo("id"))
+        assertThat(extPriceField["map_name"] as String, equalTo("ext_price"))
+        assertThat(extPriceField.size, equalTo(3))
+
+        indexTestDocumentsWithLongKeys(indexName)
 
         assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
     }
@@ -435,6 +502,43 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
             .setSource(
                 jsonBuilder().obj {
                     field("id", 3)
+                    field("name", "Cannondale")
+                }
+            )
+            .get()
+        client().prepareIndex(indexName, "product", "4")
+            .setSource(
+                jsonBuilder().obj {
+                    field("id", 4)
+                    field("name", "Honda")
+                }
+            )
+            .get()
+
+        client().admin().indices().prepareRefresh().get()
+    }
+
+    private fun indexTestDocumentsWithLongKeys(indexName: String) {
+        client().prepareIndex(indexName, "product", "1")
+            .setSource(
+                jsonBuilder().obj {
+                    field("id", 1L)
+                    field("name", "Bergamont")
+                }
+            )
+            .get()
+        client().prepareIndex(indexName, "product", "2")
+            .setSource(
+                jsonBuilder().obj {
+                    field("id", 2L)
+                    field("name", "Specialized")
+                }
+            )
+            .get()
+        client().prepareIndex(indexName, "product", "3")
+            .setSource(
+                jsonBuilder().obj {
+                    field("id", Int.MAX_VALUE.toLong() + 1L)
                     field("name", "Cannondale")
                 }
             )

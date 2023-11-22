@@ -62,22 +62,6 @@ class ExternalFieldMapperParserTests : ESSingleNodeTestCase() {
         mapperService = indexService.mapperService()
     }
 
-    private fun initMap(name: String, entries: Map<Int, Float>) {
-        StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
-                .useUnmapHack(true)
-                .open(
-                        ExternalFileService.instance.getExternalFileDir(name)
-                                .also { Files.createDirectories(it) }
-                )
-                .use { mapEnv ->
-                    mapEnv.openMap().use { map ->
-                        entries.forEach { k, v ->
-                            map.put(k, v)
-                        }
-                    }
-                }
-    }
-
     override fun getPlugins(): Collection<Class<out Plugin>> {
         return pluginList(
             InternalSettingsPlugin::class.java,
@@ -86,8 +70,6 @@ class ExternalFieldMapperParserTests : ESSingleNodeTestCase() {
     }
 
     fun testDefaults() {
-        initMap("test_ext_file", mapOf(1 to 1.1F))
-
         val mapping = jsonBuilder().obj {
             obj("type") {
                 obj("properties") {
@@ -104,7 +86,6 @@ class ExternalFieldMapperParserTests : ESSingleNodeTestCase() {
         }
 
         val documentMapper = mapperService.parse("type", CompressedXContent(BytesReference.bytes(mapping)), false)
-        // documentMapper.validate(indexService.indexSettings, true)
 
         val parsedDoc = documentMapper.parse(
                 SourceToParse(
